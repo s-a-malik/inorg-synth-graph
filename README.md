@@ -34,6 +34,7 @@ Use the --evaluate argument to evaluate the models
 ## Example Usage
 
 Preprocessing:
+```
 preprocess.py --prec_preprocess df \
                         --dataset data/solid-state_dataset_2019-06-27_upd.json \
                         --elem-dict data/datasets/elem_dict \
@@ -44,8 +45,10 @@ preprocess.py --prec_preprocess df \
                         --dodgy-dois data/dodgy_dois.txt \
                         --max-prec 10 --min_prec 2 \
                         --num-elem 30
+```
 
 Training Action Autoencoder:
+```
 reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_prec10_df_all_2104.pkl \
                              --action-path data/datasets/action_dict_prec10_df_all_2104.json \
                              --val-size 0 --test-size 0.2 --seed 0 \
@@ -53,9 +56,10 @@ reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_prec10_df
                              --optim SGD --lr 0.3 --loss CrossEntropy \
                              --epochs 70 --batch-size 128 \
                              --fold-id 260498132 \
-
+```
 
 Training product prediction model (with actions):
+```
 train_actions.py --data-path data/datasets/dataset_prec10_df_all_2104_prec3_dict.pkl \
                  --fea-path data/embeddings/magpie_embed_prec10_df_all_2104.json \
                  --action-path data/datasets/action_dict_prec10_df_all_2104.json \
@@ -69,9 +73,10 @@ train_actions.py --data-path data/datasets/dataset_prec10_df_all_2104_prec3_dict
                  --optim Adam --lr 0.0001 --loss BCE \
                  --epochs 60 --batch-size 256 --reg-weight 0 \
                  --train-rnn --mask --amounts --prec-type magpie \
-
+```
 
 Training stoichiometry prediction model:
+```
 train_stoich.py --data-path results/correct_prec10_rnn_26049811.pkl \
                  --elem-path data/datasets/elem_dict_prec10_df_all_2104.json \
                  --elem-fea-path data/embeddings/matscholar-embedding.json \
@@ -82,7 +87,7 @@ train_stoich.py --data-path results/correct_prec10_rnn_26049811.pkl \
                  --threshold 0.5 \
                  --optim Adam --lr 0.0001 --loss MSE \
                  --epochs 200 --batch-size 256 
-
+```
 
 For end-to-end testing, run --evaluate on the trained product prediction model, then --evaluate on the trained stoichiometry prediction model using the product prediction results as an input file.
 

@@ -1,0 +1,8 @@
+numpy==1.18.1
+matminer==0.6.2
+matplotlib==3.1.1
+tqdm==4.42.0
+pandas==1.0.1
+torch==1.4.0
+torch_scatter==2.0.2
+scikit_learn==0.22.2.post1

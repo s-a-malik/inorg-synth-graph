@@ -9,7 +9,6 @@ from ast import literal_eval
 from itertools import permutations
 
 import numpy as np
-import gensim
 
 from torch.utils.data import random_split
 
