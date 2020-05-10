@@ -342,7 +342,8 @@ def custom_loss(output, target):
     # weights
     weight = torch.where(num_actions != 0, max_num_actions / num_actions, num_actions).float()
 
-    weighted_loss = nn.CrossEntropyLoss(ignore_index=0, weight=weight)(output, target)
+    # weighted_loss = nn.CrossEntropyLoss(ignore_index=0, weight=weight)(output, target)
+    weighted_loss = nn.CrossEntropyLoss(ignore_index=0)(output, target)
 
     return weighted_loss
 
@@ -423,10 +424,11 @@ def evaluate(generator, model, criterion, optimizer, device, task="train", verbo
                 x_padded = x_padded[:, 1:, :].contiguous()
                 x_padded = x_padded.view(-1, x_padded.shape[-1]).to(device)
                 # get true class value for loss
+                print(x_padded[:5])
                 _, x_padded = x_padded.max(dim=1)
-                print(output.shape, x_padded.shape)
-                print(output)
-                print(x_padded)
+                # print(output.shape, x_padded.shape)
+                # print(output)
+                print(x_padded[:5])
 
                 loss = criterion(output, x_padded)
                 loss_meter.update(loss.data.cpu().item(), x_padded.size(0))
