@@ -51,7 +51,7 @@ Training Action Autoencoder:
 ```
 reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_prec10_df_all_2104.pkl \
                              --action-path data/datasets/action_dict_prec10_df_all_2104.json \
-                             --val-size 0 --test-size 0.2 --seed 0 \
+                             --val-size 0.2 --test-size 0.2 --seed 0 \
                              --latent-dim 32 --embedding-dim 8 \
                              --num-layers 1 \
                              --optim SGD --lr 0.3 --loss CrossEntropy \
@@ -66,7 +66,7 @@ train_actions.py --data-path data/datasets/dataset_prec10_df_all_2104_prec3_dict
                  --action-path data/datasets/action_dict_prec10_df_all_2104.json \
                  --elem-path data/datasets/elem_dict_prec3_df_all_2104.json \
                  --action-rnn models/rnn_f-260498132.pth.tar \
-                 --val-size 0 --test-size 0.2 --seed 0 \
+                 --val-size 0.2 --test-size 0.2 --seed 0 \
                  --ensemble 5 --run-id 0 --fold-id 26049811 \
                  --prec-fea-len 128 --n-graph 5 \
                  --latent-dim 32 \
@@ -82,7 +82,7 @@ train_stoich.py --data-path results/correct_prec10_rnn_26049811.pkl \
                  --elem-path data/datasets/elem_dict_prec10_df_all_2104.json \
                  --elem-fea-path data/embeddings/matscholar-embedding.json \
                  --seed 0 --sample 1 \
-                 --val-size 0 --test-size 0.2 \
+                 --val-size 0.2 --test-size 0.2 \
                  --ensemble 5 --run-id 0 --fold-id 26049812 \
                  --intermediate-dim 256 --n-heads 5 \
                  --threshold 0.5 \

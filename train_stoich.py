@@ -76,7 +76,7 @@ def init_optim(model):
 def main():
 
     dataset = ProductData(data_path=args.data_path,
-                              fea_path=args.fea_path,
+                              fea_path=args.elem_fea_path,
                               elem_path=args.elem_path,
                               threshold=args.threshold)
     orig_atom_fea_len = dataset.atom_fea_dim    # atom embedding dimension

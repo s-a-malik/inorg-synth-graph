@@ -35,7 +35,7 @@ def input_parser():
                         nargs='?',  
                         default='data/datasets/elem_dict_prec10_df_all_2104.json', 
 	                    help="Path to element dictionary")
-    parser.add_argument('--intermediate_dim',
+    parser.add_argument('--intermediate-dim',
                         type=int,   
                         nargs='?', 
                         default=128,
