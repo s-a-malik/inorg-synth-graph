@@ -68,7 +68,7 @@ train_actions.py --data-path data/datasets/dataset_prec10_df_all_2104_prec3_dict
                  --action-rnn models/rnn_f-260498132.pth.tar \
                  --val-size 0 --test-size 0.2 --seed 0 \
                  --ensemble 5 --run-id 0 --fold-id 26049811 \
-                 --atom-fea-len 128 --n-graph 5 \
+                 --prec-fea-len 128 --n-graph 5 \
                  --latent-dim 32 \
                  --intermediate-dim 256 --target-dim 81 \
                  --optim Adam --lr 0.0001 --loss BCE \
