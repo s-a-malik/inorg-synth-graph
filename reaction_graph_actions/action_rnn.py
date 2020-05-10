@@ -334,8 +334,8 @@ def custom_loss(output, target):
     for i in range(output.shape[1]):
         num_actions.append((target == i).unsqueeze(0))
     num_actions = torch.cat(num_actions, dim=0).sum(dim=1)
-    print(num_actions)
-    print(target)
+    # print(num_actions)
+    # print(target)
 
     # find max number of actions
     max_num_actions = torch.max(num_actions).repeat(len(num_actions))
@@ -416,17 +416,18 @@ def evaluate(generator, model, criterion, optimizer, device, task="train", verbo
                 test_encoded += encoded.tolist()
                 test_total += output.size(0)
             else:
-                # get predictions and error
-                
                 # remove SOS token
                 output = output[:, 1:, :].contiguous()
                 # flatten
                 output = output.view(-1, output.shape[-1])
                 x_padded = x_padded[:, 1:, :].contiguous()
                 x_padded = x_padded.view(-1, x_padded.shape[-1]).to(device)
-                
                 # get true class value for loss
                 _, x_padded = x_padded.max(dim=1)
+                print(output.shape, x_padded.shape)
+                print(output)
+                print(x_padded)
+
                 loss = criterion(output, x_padded)
                 loss_meter.update(loss.data.cpu().item(), x_padded.size(0))
                 if task == "train":
