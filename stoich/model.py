@@ -34,7 +34,7 @@ class StoichNet(nn.Module):
     
         # use hyperparameter for number of attn heads
         self.stoich_pool = nn.ModuleList([NormStoich(
-            gate_nn=ResidualNetwork(orig_elem_fea_len+orig_reaction_fea_len, 1, embed_dims),
+            gate_nn=ResidualNetwork(orig_elem_fea_len+orig_reaction_fea_len, 1, embed_dims)
             ) for _ in range(n_heads)])
 
 
@@ -93,6 +93,8 @@ class NormStoich(nn.Module):
         ----------
         gate_nn: Variable(nn.Module)
         """
+        super(NormStoich, self).__init__()
+
         self.gate_nn = gate_nn
 
     def forward(self, fea, index):
