@@ -141,7 +141,7 @@ def main():
     previous_state = load_previous_state(args.action_rnn,
                                             rnn,
                                             args.device)
-    pretrained_rnn, _, _, _, _, _ = previous_state
+    pretrained_rnn, _, _, _, _ = previous_state
     if not args.train_rnn:
         # stops autograd from changing parameters of trained network
         for p in pretrained_rnn.parameters():
