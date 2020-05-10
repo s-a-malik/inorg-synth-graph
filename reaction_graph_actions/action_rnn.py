@@ -259,7 +259,7 @@ class LSTM(nn.Module):
                                                     batch_first=True, enforce_sorted=False).to(self.device)
         
         # encode
-        out, last_hidden = self.encoder(x_packed)
+        _, last_hidden = self.encoder(x_packed)
         encoded = last_hidden[0].view(x.shape[0], self.num_layers, -1)
         # take only last layer hidden state for input
         encoded = encoded[:, -1, :]
@@ -334,6 +334,8 @@ def custom_loss(output, target):
     for i in range(output.shape[1]):
         num_actions.append((target == i).unsqueeze(0))
     num_actions = torch.cat(num_actions, dim=0).sum(dim=1)
+    print(num_actions)
+    print(target)
 
     # find max number of actions
     max_num_actions = torch.max(num_actions).repeat(len(num_actions))
@@ -352,7 +354,7 @@ def init_optim(model):
     elif args.loss == "MSE":
         criterion = nn.MSELoss()
     else:
-        raise NameError("Only custom or MAE are allowed as --loss")
+        raise NameError("Only custom or MSE are allowed as --loss")
 
     # Select Optimiser
     if args.optim == "SGD":

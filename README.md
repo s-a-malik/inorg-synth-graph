@@ -43,7 +43,7 @@ preprocess.py --prec_preprocess df \
                         --magpie-embed data/embeddings/magpie_embed \
                         --ps _prec10_df_30_2104 \
                         --dodgy-dois data/dodgy_dois.txt \
-                        --max-prec 10 --min_prec 2 \
+                        --max-prec 10 --min-prec 2 \
                         --num-elem 30
 ```
 
@@ -52,7 +52,8 @@ Training Action Autoencoder:
 reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_prec10_df_all_2104.pkl \
                              --action-path data/datasets/action_dict_prec10_df_all_2104.json \
                              --val-size 0 --test-size 0.2 --seed 0 \
-                             --latent-dim 32 --num-layers 1 \
+                             --latent-dim 32 --embedding-dim 8 \
+                             --num-layers 1 \
                              --optim SGD --lr 0.3 --loss CrossEntropy \
                              --epochs 70 --batch-size 128 \
                              --fold-id 260498132 \
