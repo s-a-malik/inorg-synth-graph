@@ -19,7 +19,7 @@ More recent versions of the dataset are released by the original authors [here](
 
 dodgy_dois.txt contains the the dois of reactions incompatible with the model.
 preprocess.py is used to generate the dataframes and supporting files from the raw data. This takes dodgy_dois.txt as an input, and the number of elements and precursors can be adjusted using optional arguments.
-Use the --df flag to save as a pandas dataframe (format used in the model)
+Use the --prec-preprocess df flag to save as a pandas dataframe (format used in the model)
 
 ## Training and Testing
 
@@ -41,7 +41,7 @@ Use the --evaluate argument to evaluate the models
 
 Preprocessing:
 ```
-preprocess.py --prec_preprocess df \
+preprocess.py --prec-preprocess df \
                         --dataset data/solid-state_dataset_2019-09-27.json \
                         --elem-dict data/datasets/elem_dict \
                         --action-dict data/datasets/action_dict \
