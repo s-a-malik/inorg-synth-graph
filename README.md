@@ -7,7 +7,13 @@ Part III Physics Project, University of Cambridge
 
 See requirements.txt file
 
-The raw dataset, embeddings and processed data are given in the data folder
+The raw dataset used for this work can be downloaded using the following command (linux):
+
+```sh
+wget -cO - https://ndownloader.figshare.com/files/17412674  > data/solid-state_dataset_2019-09-27.json
+```
+
+More recent versions of the dataset are released by the original authors [here](https://github.com/CederGroupHub/text-mined-synthesis_public)
 
 ## Preprocess
 
@@ -36,7 +42,7 @@ Use the --evaluate argument to evaluate the models
 Preprocessing:
 ```
 preprocess.py --prec_preprocess df \
-                        --dataset data/solid-state_dataset_2019-06-27_upd.json \
+                        --dataset data/solid-state_dataset_2019-09-27.json \
                         --elem-dict data/datasets/elem_dict \
                         --action-dict data/datasets/action_dict \
                         --clean-set data/datasets/dataset \
