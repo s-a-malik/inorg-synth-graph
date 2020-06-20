@@ -94,7 +94,7 @@ def input_parser():
                         metavar="N",
                         help="sub-sample the training set for learning curves")
     parser.add_argument("--fold-id",
-                        default=1,
+                        default=0,
                         type=int,
                         metavar="N",
                         help="fold id for run")    

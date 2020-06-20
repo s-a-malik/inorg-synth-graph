@@ -57,7 +57,7 @@ train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
                  --fea-path data/embeddings/magpie_embed_10_precs.json \
                  --action-path data/datasets/action_dict_10_precs.json \
                  --elem-path data/datasets/elem_dict_10_precs.json \
-                 --action-rnn models/checkpoint_rnn_f-1_s-0_t-1.pth.tar \
+                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
                  --train-rnn --mask --amounts \
                  --ensemble 5 
 ```
@@ -68,7 +68,7 @@ train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
                  --fea-path data/embeddings/magpie_embed_10_precs.json \
                  --action-path data/datasets/action_dict_10_precs.json \
                  --elem-path data/datasets/elem_dict_10_precs.json \
-                 --action-rnn models/checkpoint_rnn_f-1_s-0_t-1.pth.tar \
+                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
                  --train-rnn --mask --amounts \
                  --ensemble 5 \
                  --test-size 1 --evaluate
