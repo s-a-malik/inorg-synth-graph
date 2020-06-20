@@ -78,7 +78,8 @@ def main():
     dataset = ProductData(data_path=args.data_path,
                               fea_path=args.elem_fea_path,
                               elem_path=args.elem_path,
-                              threshold=args.threshold)
+                              threshold=args.threshold,
+                              use_correct_targets=args.use_correct_targets)
     orig_atom_fea_len = dataset.atom_fea_dim    # atom embedding dimension
     orig_reaction_fea_len = dataset.reaction_fea_dim    # reaction embedding dimension
     print('orig atom embedding dimension', orig_atom_fea_len)

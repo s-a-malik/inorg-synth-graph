@@ -22,7 +22,7 @@ def input_parser():
     # dataset inputs
     parser.add_argument("--data-path",
                         type=str,
-                        default="results/correct_prec10_rnn_26049811.pkl",
+                        default="results/test_results_f-0_r-0_s-0_t-1.pkl",
                         metavar="PATH",
                         help="Path to results dataframe from element prediction")
     parser.add_argument("--elem-fea-path",
@@ -33,15 +33,15 @@ def input_parser():
     parser.add_argument('--elem-path',
 	                    type=str,   
                         nargs='?',  
-                        default='data/datasets/elem_dict_prec10_df_all_2104.json', 
+                        default='data/datasets/elem_dict_10_precs.json', 
 	                    help="Path to element dictionary")
     parser.add_argument('--intermediate-dim',
                         type=int,   
                         nargs='?', 
-                        default=128,
+                        default=256,
                         help='Intermediate model dimension')
     parser.add_argument("--n-heads",
-                        default=3,
+                        default=5,
                         type=int,
                         metavar="N",
                         help="number of attention heads")
@@ -62,7 +62,7 @@ def input_parser():
                         metavar="N",
                         help="number of data loading workers (default: 0)")
     parser.add_argument("--batch-size", "--bsize",
-                        default=128,
+                        default=256,
                         type=int,
                         metavar="N",
                         help="mini-batch size (default: 128)")
@@ -86,10 +86,13 @@ def input_parser():
                         type=int,
                         metavar="N",
                         help="sub-sample the training set for learning curves")
+    parser.add_argument("--use-correct-targets",
+                        action="store_true",
+                        help="Use correct elements for training")   
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        default=300,
+                        default=200,
                         type=int,
                         metavar="N",
                         help="number of total epochs to run")
@@ -105,12 +108,12 @@ def input_parser():
                         metavar='prob',
                         help="Threshold for element presence in product (probability)")
     parser.add_argument("--optim",
-                        default="SGD",
+                        default="Adam",
                         type=str,
                         metavar="str",
                         help="choose an optimizer; SGD, Adam or AdamW")
     parser.add_argument("--learning-rate", "--lr",
-                        default=5e-4,
+                        default=0.0001,
                         type=float,
                         metavar="float",
                         help="initial learning rate (default: 3e-4)")
@@ -181,7 +184,7 @@ class ProductData(Dataset):
     """
     The ProductData dataset is a wrapper for the product element prediction results dataset.
     """
-    def __init__(self, data_path, fea_path, elem_path, threshold):
+    def __init__(self, data_path, fea_path, elem_path, threshold, use_correct_targets):
         """
         Inputs
         --------
@@ -193,6 +196,8 @@ class ProductData(Dataset):
             Path to element dictionary
         threshold: float
             Threshold probability for elemental presence
+        use_correct_targets: bool
+            Whether to use correct element predictions for training purposes
         """
         assert os.path.exists(data_path), \
             "{} does not exist!".format(data_path)
@@ -200,8 +205,17 @@ class ProductData(Dataset):
             raw_data = pkl.load(f)
         data = [map(list, x) for x in raw_data[:-1]]
         data.append(raw_data[-1])
-        df = pd.DataFrame(data={'logits': data[0], 'targets': data[1], 
-                                'prec_embed': data[2], 'id': data[3]})
+
+        # save correct logits for training purposes
+        if use_correct_targets:
+            correct_logits = []
+            for reaction in range(len(data[1])):
+                correct_logits.append([2.5 if elem != 0 else -999 for elem in data[1][reaction]])
+            df = pd.DataFrame(data={'logits': correct_logits, 'targets': data[1], 
+                                    'prec_embed': data[2], 'id': data[3]})
+        else:                           
+            df = pd.DataFrame(data={'logits': data[0], 'targets': data[1], 
+                                    'prec_embed': data[2], 'id': data[3]})
 
         print(df)
 
@@ -413,7 +427,7 @@ if __name__ == "__main__":
     elemdict_path = 'data/datasets/elem_dict_prec3_amounts_roost.pkl'
     threshold = 0.9
     
-    dataset = ProductData(data_path, embedding_path, elemdict_path, threshold)
+    dataset = ProductData(data_path, embedding_path, elemdict_path, threshold, use_correct_targets=True)
     (atom_fea, prec_embed), \
             target, elements, cry_id = dataset.__getitem__(1)
 

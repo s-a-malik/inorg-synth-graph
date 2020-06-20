@@ -15,11 +15,13 @@ wget -cO - https://ndownloader.figshare.com/files/17412674  > data/solid-state_d
 
 More recent versions of the dataset are released by the original authors [here](https://github.com/CederGroupHub/text-mined-synthesis_public)
 
+The element embeddings used in this work are found here: [Unsupervised word embeddings capture latent knowledge from materials science literature](https://www.nature.com/articles/s41586-019-1335-8)
+
 ## Preprocess
 
 dodgy_dois.txt contains the the dois of reactions incompatible with the model.
-preprocess.py is used to generate the dataframes and supporting files from the raw data. This takes dodgy_dois.txt as an input, and the number of elements and precursors can be adjusted using optional arguments.
-Use the --prec-preprocess df flag to save as a pandas dataframe (format used in the model)
+preprocess.py is used to generate the dataframes and supporting files from the raw data. 
+This takes dodgy_dois.txt as an input, and the number of elements and precursors can be adjusted using optional arguments.
 
 ## Training and Testing
 
@@ -29,74 +31,59 @@ reaction_graph_actions/actions_rnn.py is used for training the action sequence a
 train_no_graph.py is used for training the non-graph baseline model
 train_stoich.py is used for training the stoichiometry prediction model
 
-
 The results from the product prediction model are then used in the stoichiometry prediction model
 
 Model dimensions and Hyperparameters are set using argparse flags.
-
-Use the --evaluate argument to evaluate the models
-
 
 ## Example Usage
 
 Preprocessing:
 ```
-preprocess.py --prec-preprocess df \
-                        --dataset data/solid-state_dataset_2019-09-27.json \
-                        --elem-dict data/datasets/elem_dict \
-                        --action-dict data/datasets/action_dict \
-                        --clean-set data/datasets/dataset \
-                        --magpie-embed data/embeddings/magpie_embed \
-                        --ps _prec10_df_30_2104 \
-                        --dodgy-dois data/dodgy_dois.txt \
-                        --max-prec 10 --min-prec 2 \
-                        --num-elem 30
+preprocess.py --dataset data/solid-state_dataset_2019-09-27.json \
+              --dodgy-dois data/dodgy_dois.txt \
+              --ps _10_precs \
+              --max-prec 10 --min-prec 2
 ```
 
 Training Action Autoencoder:
 ```
-reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_prec10_df_all_2104.pkl \
-                             --action-path data/datasets/action_dict_prec10_df_all_2104.json \
-                             --val-size 0.2 --test-size 0.2 --seed 0 \
-                             --latent-dim 32 --embedding-dim 8 \
-                             --num-layers 1 \
-                             --optim SGD --lr 0.3 --loss CrossEntropy \
-                             --epochs 70 --batch-size 128 \
-                             --fold-id 260498132 \
+reaction_graph_actions/action_rnn.py --data-path data/datasets/dataset_10_precs.pkl \
+                                     --action-path data/datasets/action_dict_10_precs.json 
 ```
 
-Training product prediction model (with actions):
+Training product element prediction model (with actions):
 ```
-train_actions.py --data-path data/datasets/dataset_prec10_df_all_2104_prec3_dict.pkl \
-                 --fea-path data/embeddings/magpie_embed_prec10_df_all_2104.json \
-                 --action-path data/datasets/action_dict_prec10_df_all_2104.json \
-                 --elem-path data/datasets/elem_dict_prec3_df_all_2104.json \
-                 --action-rnn models/rnn_f-260498132.pth.tar \
-                 --val-size 0.2 --test-size 0.2 --seed 0 \
-                 --ensemble 5 --run-id 0 --fold-id 26049811 \
-                 --prec-fea-len 128 --n-graph 5 \
-                 --latent-dim 32 \
-                 --intermediate-dim 256 --target-dim 81 \
-                 --optim Adam --lr 0.0001 --loss BCE \
-                 --epochs 60 --batch-size 256 --reg-weight 0 \
-                 --train-rnn --mask --amounts --prec-type magpie \
+train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
+                 --fea-path data/embeddings/magpie_embed_10_precs.json \
+                 --action-path data/datasets/action_dict_10_precs.json \
+                 --elem-path data/datasets/elem_dict_10_precs.json \
+                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
+                 --train-rnn --mask --amounts \
+                 --ensemble 5 
 ```
 
-Training stoichiometry prediction model:
+Get reaction embeddings for full dataset (required for training stoichiometry prediction)
 ```
-train_stoich.py --data-path results/correct_prec10_rnn_26049811.pkl \
-                 --elem-path data/datasets/elem_dict_prec10_df_all_2104.json \
+train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
+                 --fea-path data/embeddings/magpie_embed_10_precs.json \
+                 --action-path data/datasets/action_dict_10_precs.json \
+                 --elem-path data/datasets/elem_dict_10_precs.json \
+                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
+                 --train-rnn --mask --amounts \
+                 --ensemble 5 \
+                 --test-size 1 --evaluate
+```
+
+Training stoichiometry prediction model (using correct element predictions):
+```
+train_stoich.py --data-path results/test_results_f-0_r-0_s-0_t-1.pkl \
+                 --elem-path data/datasets/elem_dict_10_precs.json \
                  --elem-fea-path data/embeddings/matscholar-embedding.json \
-                 --seed 0 --sample 1 \
-                 --val-size 0.2 --test-size 0.2 \
-                 --ensemble 5 --run-id 0 --fold-id 26049812 \
-                 --intermediate-dim 256 --n-heads 5 \
-                 --threshold 0.5 \
-                 --optim Adam --lr 0.0001 --loss MSE \
-                 --epochs 200 --batch-size 256 
+                 --use-correct-targets \
+                 --ensemble 5 --fold-id 1
 ```
 
-For end-to-end testing, run --evaluate on the trained product prediction model, then --evaluate on the trained stoichiometry prediction model using the product prediction results as an input file.
+For end-to-end testing, run --evaluate on the trained product prediction model, then --evaluate on the trained stoichiometry prediction model (removing --use-correct-targets flag) using the product prediction results as an input file.
 
 ## Acknowledgements
 

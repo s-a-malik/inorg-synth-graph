@@ -38,12 +38,12 @@ def input_parser():
     # dataset inputs
     parser.add_argument("--data-path",
                         type=str,
-                        default="data/datasets/expt-non-metals.csv",
+                        default="data/datasets/dataset_10_precs.pkl",
                         metavar="PATH",
                         help="dataset path")
     parser.add_argument("--action-path",
                         type=str,
-                        default="data/datasets/expt-non-metals.csv",
+                        default="data/datasets/action_dict_10_precs.json",
                         metavar="PATH",
                         help="action dict path")
     parser.add_argument("--embedding-dim",
@@ -53,7 +53,7 @@ def input_parser():
                         help="Dim of embedding rep for sequences (linear embedding instead of OHE)")
     parser.add_argument("--latent-dim",
                         type=int,
-                        default=64,
+                        default=32,
                         metavar="N",
                         help="Dim of latent representation of sequence")
     parser.add_argument("--num-layers",
@@ -104,7 +104,7 @@ def input_parser():
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        default=300,
+                        default=70,
                         type=int,
                         metavar="N",
                         help="number of total epochs to run")
@@ -119,7 +119,7 @@ def input_parser():
                         metavar="str",
                         help="choose an optimizer; SGD, Adam or AdamW")
     parser.add_argument("--learning-rate", "--lr",
-                        default=5e-4,
+                        default=0.3,
                         type=float,
                         metavar="float",
                         help="initial learning rate (default: 3e-4)")

@@ -23,33 +23,33 @@ def input_parser():
     # dataset inputs
     parser.add_argument("--data-path",
                         type=str,
-                        default="data/datasets/dataset_prec3_df_all_2104.pkl",
+                        default="data/datasets/dataset_10_precs.pkl",
                         metavar="PATH",
                         help="dataset path")
     parser.add_argument("--fea-path",
                         type=str,
-                        default="data/embeddings/magpie_embed_prec3_df_all_2104.json",
+                        default="data/embeddings/magpie_embed_10_precs.json",
                         metavar="PATH",
                         help="Precursor feature path")
     parser.add_argument('--action-rnn',
 	                    type=str,   
                         nargs='?',  
-                        default='datasets/models/prec3_amounts_roost_model.pth.tar', 
+                        default='models/checkpoint_rnn_f-1_s-0_t-1.pth.tar', 
 	                    help="Path to trained action autoencoder")
     parser.add_argument('--action-path',
 	                    type=str,   
                         nargs='?',  
-                        default='data/datasets/action_dict_prec3_df_all_2104.json', 
+                        default='data/datasets/action_dict_10_precs.json', 
 	                    help="Path to action dictionary")
     parser.add_argument('--elem-path',
 	                    type=str,   
                         nargs='?',  
-                        default='data/datasets/elem_dict_prec3_df_all_2104.json', 
+                        default='data/datasets/elem_dict_10_precs.json', 
 	                    help="Path to element dictionary")
     parser.add_argument('--prec-type',
 	                    type=str,   
                         nargs='?',  
-                        default='stoich', 
+                        default='magpie', 
 	                    help="Type of input, stoich or magpie")
     parser.add_argument('--latent-dim',
                         type=int,   
@@ -59,18 +59,33 @@ def input_parser():
     parser.add_argument('--intermediate-dim',
                         type=int,   
                         nargs='?', 
-                        default=128,
+                        default=256,
                         help='Intermediate model dimension')
     parser.add_argument('--target-dim',
                         type=int,   
                         nargs='?', 
                         default=81,
                         help='Target vector dimension')
+    parser.add_argument("--prec-fea-len",
+                        default=128,
+                        type=int,
+                        metavar="N",
+                        help="Dimension of node features")
+    parser.add_argument("--n-graph",
+                        default=5,
+                        type=int,
+                        metavar="N",
+                        help="number of graph layers")
     parser.add_argument('--mask',
                         action="store_true",
                         default=False,
                         help="Whether to mask output with precursor elements or not")  
-    
+    parser.add_argument('--amounts',
+                        action="store_true",
+                        default=False,
+                        help="use precursor amounts as weights")
+
+
     parser.add_argument("--disable-cuda",
                         action="store_true",
                         help="Disable CUDA")
@@ -87,10 +102,10 @@ def input_parser():
                         metavar="N",
                         help="number of data loading workers (default: 0)")
     parser.add_argument("--batch-size", "--bsize",
-                        default=128,
+                        default=256,
                         type=int,
                         metavar="N",
-                        help="mini-batch size (default: 128)")
+                        help="mini-batch size (default: 256)")
     parser.add_argument("--val-size",
                         default=0.0,
                         type=float,
@@ -111,14 +126,10 @@ def input_parser():
                         type=int,
                         metavar="N",
                         help="sub-sample the training set for learning curves")
-    parser.add_argument('--amounts',
-                        action="store_true",
-                        default=False,
-                        help="use precursor amounts as weights")
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        default=300,
+                        default=60,
                         type=int,
                         metavar="N",
                         help="number of total epochs to run")
@@ -143,7 +154,7 @@ def input_parser():
                         metavar="str",
                         help="choose an optimizer; SGD, Adam or AdamW")
     parser.add_argument("--learning-rate", "--lr",
-                        default=5e-4,
+                        default=0.0001,
                         type=float,
                         metavar="float",
                         help="initial learning rate (default: 3e-4)")
@@ -158,21 +169,9 @@ def input_parser():
                         metavar="float [0,1]",
                         help="weight decay (default: 0)")
 
-    # graph inputs
-    parser.add_argument("--prec-fea-len",
-                        default=64,
-                        type=int,
-                        metavar="N",
-                        help="Dimension of node features")
-    parser.add_argument("--n-graph",
-                        default=3,
-                        type=int,
-                        metavar="N",
-                        help="number of graph layers")
-
     # ensemble inputs
     parser.add_argument("--fold-id",
-                        default=0,
+                        default=1,
                         type=int,
                         metavar="N",
                         help="identify the fold of the data")

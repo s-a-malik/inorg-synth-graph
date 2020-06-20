@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument('--dataset',
 	                    type=str,   
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/solid-state_dataset_2019-06-27_upd.json',   # default if no arg provided
+                        default='data/solid-state_dataset_2019-09-27_upd.json',   # default if no arg provided
 	                    help="Path to dataset to use")
     parser.add_argument('--elem-dict',
 	                    type=str,   
@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument('--clean-set',
 	                    type=str,   
                         nargs='?',  # number of arguments 0 or 1
-                        default='datasets/preprocessed/dataset',   # default if no arg provided
+                        default='data/datasets/dataset',   # default if no arg provided
 	                    help="Path to full clean dataset to use without extension")
     parser.add_argument('--ps',
 	                    type=str,   
@@ -58,12 +58,12 @@ def parse_args():
     parser.add_argument('--prec-preprocess',
 	                    type=str,   
                         nargs='?',
-                        default='stoich',
+                        default='df',
 	                    help="type of preprocessing of precursors: df, roost, stoich or magpie")    
     parser.add_argument('--max-prec',
 	                    type=int,   
                         nargs='?',
-                        default=20,
+                        default=10,
                         help='Max number of precursors per reaction.')
     parser.add_argument('--min-prec',
 	                    type=int,   
