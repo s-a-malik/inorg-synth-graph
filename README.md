@@ -10,7 +10,7 @@ See requirements.txt file
 The raw dataset used for this work can be downloaded using the following command (linux):
 
 ```sh
-wget -cO - https://ndownloader.figshare.com/files/17412674  > data/solid-state_dataset_2019-09-27.json
+wget -cO - https://ndownloader.figshare.com/files/17412674  > data/solid-state_dataset_2019-06-27.json
 ```
 
 More recent versions of the dataset are released by the original authors [here](https://github.com/CederGroupHub/text-mined-synthesis_public)
@@ -39,7 +39,7 @@ Model dimensions and Hyperparameters are set using argparse flags.
 
 Preprocessing:
 ```
-preprocess.py --dataset data/solid-state_dataset_2019-09-27.json \
+preprocess.py --dataset data/solid-state_dataset_2019-06-27.json \
               --dodgy-dois data/dodgy_dois.txt \
               --ps _10_precs \
               --max-prec 10 --min-prec 2
@@ -57,7 +57,7 @@ train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
                  --fea-path data/embeddings/magpie_embed_10_precs.json \
                  --action-path data/datasets/action_dict_10_precs.json \
                  --elem-path data/datasets/elem_dict_10_precs.json \
-                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
+                 --action-rnn models/checkpoint_rnn_f-1_s-0_t-1.pth.tar \
                  --train-rnn --mask --amounts \
                  --ensemble 5 
 ```
@@ -68,7 +68,7 @@ train_actions.py --data-path data/datasets/dataset_10_precs.pkl \
                  --fea-path data/embeddings/magpie_embed_10_precs.json \
                  --action-path data/datasets/action_dict_10_precs.json \
                  --elem-path data/datasets/elem_dict_10_precs.json \
-                 --action-rnn models/checkpoint_rnn_f-0_s-0_t-1.pth.tar \
+                 --action-rnn models/checkpoint_rnn_f-1_s-0_t-1.pth.tar \
                  --train-rnn --mask --amounts \
                  --ensemble 5 \
                  --test-size 1 --evaluate

@@ -48,7 +48,7 @@ def input_parser():
                         help="action dict path")
     parser.add_argument("--embedding-dim",
                         type=int,
-                        default=64,
+                        default=8,
                         metavar="N",
                         help="Dim of embedding rep for sequences (linear embedding instead of OHE)")
     parser.add_argument("--latent-dim",
