@@ -202,23 +202,20 @@ class ProductData(Dataset):
         assert os.path.exists(data_path), \
             "{} does not exist!".format(data_path)
         with open(data_path, 'rb') as f:
-            raw_data = pkl.load(f)
-        data = [map(list, x) for x in raw_data[:-1]]
-        data.append(raw_data[-1])
+            logits, targets, prec_embed, id = pkl.load(f)
 
         # save correct logits for training purposes
         if use_correct_targets:
             correct_logits = []
-            for reaction in range(len(data[1])):
-                correct_logits.append([2.5 if elem != 0 else -999 for elem in data[1][reaction]])
-            df = pd.DataFrame(data={'logits': correct_logits, 'targets': data[1], 
-                                    'prec_embed': data[2], 'id': data[3]})
+            for reaction in range(len(logits)):
+                correct_logits.append([2.5 if elem != 0 else -999 for elem in targets[reaction]])
+            df = pd.DataFrame(data={'logits': map(list, correct_logits), 'targets': map(list, targets), 
+                                    'prec_embed': map(list, prec_embed), 'id': id})
         else:                           
-            df = pd.DataFrame(data={'logits': data[0], 'targets': data[1], 
-                                    'prec_embed': data[2], 'id': data[3]})
+            df = pd.DataFrame(data={'logits': map(list, logits), 'targets': map(list, targets), 
+                                    'prec_embed': map(list, prec_embed), 'id': id})
 
         print(df)
-
         self.df = df
 
         assert os.path.exists(fea_path), "{} does not exist!".format(fea_path)
@@ -422,9 +419,9 @@ class LoadFeaturiser(Featuriser):
 
 if __name__ == "__main__":
     
-    data_path = 'data/datasets/test_results_prec3_amounts_roost_with_embed_correct.pkl'
-    embedding_path = 'data/embeddings/onehot-embedding.json'
-    elemdict_path = 'data/datasets/elem_dict_prec3_amounts_roost.pkl'
+    data_path = 'data/datasets/test_results_prec3_amounts_roost_with_embed.pkl'
+    embedding_path = 'data/embeddings/matscholar-embedding.json'
+    elemdict_path = 'data/datasets/elem_dict_prec3_df_all_2104.pkl'
     threshold = 0.9
     
     dataset = ProductData(data_path, embedding_path, elemdict_path, threshold, use_correct_targets=True)

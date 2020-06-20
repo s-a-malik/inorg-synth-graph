@@ -1,7 +1,8 @@
 # inorg-synth-graph
 
 Inorganic Reaction Representation Learning and Product Prediction
-Part III Physics Project, University of Cambridge
+
+Cavendish Laboratory, University of Cambridge
 
 ## Dependancies 
 
