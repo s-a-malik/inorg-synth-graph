@@ -26,13 +26,13 @@ This takes dodgy_dois.txt as an input, and the number of elements and precursors
 
 ## Training and Testing
 
-train.py is used for training the reaction graph model
-train_actions.py is used for training the reaction graph model with action sequences
-reaction_graph_actions/actions_rnn.py is used for training the action sequence autoencoder
-train_no_graph.py is used for training the non-graph baseline model
-train_stoich.py is used for training the stoichiometry prediction model
+train.py is used for training the reaction graph model.
+train_actions.py is used for training the reaction graph model with action sequences.
+reaction_graph_actions/actions_rnn.py is used for training the action sequence autoencoder.
+train_no_graph.py is used for training the non-graph baseline model.
+train_stoich.py is used for training the stoichiometry prediction model.
 
-The results from the product prediction model are then used in the stoichiometry prediction model
+The results from the product prediction model are then used in the stoichiometry prediction model.
 
 Model dimensions and Hyperparameters are set using argparse flags.
 
