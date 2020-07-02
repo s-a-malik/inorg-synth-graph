@@ -90,10 +90,3 @@ For end-to-end testing, run --evaluate on the trained product prediction model, 
 
 The following work was used as a starting point for developing this work:
 - Goodall, R.E., & Lee, A.A. (2019). https://arxiv.org/abs/1910.00617.
-
-The dataset from the following was used in this work:
-- Kononova, O., Huo, H., He, T. et al. (2019)  https://doi.org/11.1038/s41597-019-0224-1 
-
-
-
-
