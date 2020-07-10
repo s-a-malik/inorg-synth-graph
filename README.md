@@ -20,19 +20,22 @@ The element embeddings used in this work are found here: [Unsupervised word embe
 
 ## Preprocess
 
+preprocess.py is used to generate the dataframes and supporting files from the raw data. The number of elements and precursors can be adjusted using optional arguments.
+
 dodgy_dois.txt contains the the dois of reactions incompatible with the model.
-preprocess.py is used to generate the dataframes and supporting files from the raw data. 
-This takes dodgy_dois.txt as an input, and the number of elements and precursors can be adjusted using optional arguments.
+
 
 ## Training and Testing
 
 train.py is used for training the reaction graph model.
-train_actions.py is used for training the reaction graph model with action sequences.
-reaction_graph_actions/actions_rnn.py is used for training the action sequence autoencoder.
-train_no_graph.py is used for training the non-graph baseline model.
-train_stoich.py is used for training the stoichiometry prediction model.
 
-The results from the product prediction model are then used in the stoichiometry prediction model.
+train_actions.py is used for training the reaction graph model with action sequences.
+
+reaction_graph_actions/actions_rnn.py is used for training the action sequence autoencoder.
+
+train_no_graph.py is used for training the non-graph baseline model.
+
+train_stoich.py is used for training the stoichiometry prediction model.
 
 Model dimensions and Hyperparameters are set using argparse flags.
 
