@@ -163,6 +163,76 @@ def ensemble(fold_id, dataset, test_set,
     """
     Train multiple models
     """
+    params = {"batch_size": args.batch_size,
+              "num_workers": args.workers,
+              "pin_memory": False,
+              "shuffle": True,
+              "collate_fn": collate_batch}
+
+    if args.val_size == 0.0:
+        print("No validation set used, using test set for evaluation purposes")
+        # Note that when using this option care must be taken not to
+        # peak at the test-set. The only valid model to use is the one obtained
+        # after the final epoch where the epoch count is decided in advance of
+        # the experiment.
+        train_subset = dataset
+        val_subset = test_set
+    else:
+        indices = list(range(len(dataset)))
+        train_idx, val_idx = split(indices, random_state=args.seed,
+                                   test_size=args.val_size/(1-args.test_size))
+        train_subset = torch.utils.data.Subset(dataset, train_idx)
+        val_subset = torch.utils.data.Subset(dataset, val_idx)
+        print("Shape of train, val subset: ", np.shape(train_subset), np.shape(val_subset))
+
+    train_generator = DataLoader(train_subset, **params)
+    val_generator = DataLoader(val_subset, **params)
+    weights = get_class_weights(train_generator)
+
+    if not args.evaluate:
+        if args.lr_search:
+            model = init_model(fea_len)
+            criterion, optimizer, scheduler = init_optim(model, weights=weights)
+
+            if args.fine_tune:
+                print("Fine tune from a network trained on a different dataset")
+                previous_state = load_previous_state(args.fine_tune,
+                                                     model,
+                                                     args.device)
+                model, _, _, _, _ = previous_state
+                model.to(args.device)
+                criterion, optimizer, scheduler = init_optim(model, weights=weights)
+            
+            lr_finder = LRFinder(model, optimizer, criterion,
+                                 metric="mse", device=args.device)
+            lr_finder.range_test(train_generator, end_lr=1,
+                                 num_iter=100, step_mode="exp")
+            lr_finder.plot()
+            return
+
+        for run_id in range(ensemble_folds):
+
+            # this allows us to run ensembles in parallel rather than in series
+            # by specifiying the run-id arg.
+            if ensemble_folds == 1:
+                run_id = args.run_id
+
+            model = init_model(fea_len)
+            criterion, optimizer, scheduler = init_optim(model, weights=weights)
+
+            writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
+                                            "{date:%d-%m-%Y_%H:%M:%S}").format(
+                                                date=datetime.datetime.now(),
+                                                f=fold_id,
+                                                r=run_id,
+                                                s=args.seed,
+                                                t=args.sample))
+
+            experiment(fold_id, run_id, args,
+                       train_generator, val_generator,
+                       model, optimizer, criterion, scheduler, writer)
+
+    test_ensemble(fold_id, ensemble_folds, test_set, fea_len)
 
 
 
