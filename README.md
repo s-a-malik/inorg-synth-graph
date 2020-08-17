@@ -1,8 +1,8 @@
 # inorg-synth-graph
 
-Inorganic Reaction Representation Learning and Product Prediction
+Inorganic Reaction Representation Learning and Product Prediction.
 
-Cavendish Laboratory, University of Cambridge
+Implementation of [Materials Graph Transformer predicts the outcomes of inorganic reactions with reliable uncertainties](https://arxiv.org/abs/2007.15752).
 
 ## Dependancies 
 
