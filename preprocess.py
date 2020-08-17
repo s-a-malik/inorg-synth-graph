@@ -675,6 +675,7 @@ def build_and_save_df():
         Data columns are as follows:
         ==========      ==============================================================
         dois            (string) reaction doi (for reference)
+        reaction        (string) reaction string
         prec_stoich     (list of lists) stoichiometry vector for each precursor (zero padded)
         prec_magpie     (list of lists) magpie embedding vector for each precursor
         prec_roost      (list of strings) normalised formulas for each precursor for Roost
@@ -699,6 +700,7 @@ def build_and_save_df():
     prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
     actions, action_dict = preprocess_actions(data)
     dois = [x['doi'] for x in data]
+    reactions = [x['reaction_string'] for x in data]
     features = {'prec_stoich': prec_stoich, 
                 'prec_magpie': prec_magpie,
                 'prec_roost': prec_roost, 
@@ -708,7 +710,7 @@ def build_and_save_df():
     features = {k: v.tolist() if type(v) == np.ndarray else v for (k, v) in features.items()}
 
     # save data
-    df = pd.DataFrame({'dois': dois, **features})
+    df = pd.DataFrame({'dois': dois, 'reaction': reactions, **features})
     print(df)
     save_dataset(df, args.clean_set)
     save_dict(elem_dict, args.elem_dict)
