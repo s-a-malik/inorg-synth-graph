@@ -17,9 +17,9 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split as split
 from sklearn.metrics import r2_score, hamming_loss, accuracy_score, f1_score
 
-from no_graph.model import NoGraphNet
-from no_graph.data import ReactionData
-from no_graph.utils import evaluate, save_checkpoint, \
+from matgps.baseline.model import NoGraphNet
+from matgps.baseline.data import ReactionData
+from matgps.baseline.utils import evaluate, save_checkpoint, \
                         load_previous_state, cyclical_lr, \
                         LRFinder
 
