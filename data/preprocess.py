@@ -15,7 +15,7 @@ from matminer.featurizers.base import MultipleFeaturizer
 from matminer.featurizers import composition as cf
 from matminer.featurizers.conversions import StrToComposition
 
-from exclude import BAD_DOI, BAD_PRECURSORS, BAD_TARGETS
+from .exclude import BAD_DOI, BAD_PRECURSORS, BAD_TARGETS
 
 
 def parse_args():
