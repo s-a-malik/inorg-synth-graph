@@ -12,217 +12,8 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
+from matgps.utils import LoadFeaturiser, Featuriser
 
-def input_parser():
-    """
-    parse input
-    """
-    parser = argparse.ArgumentParser(
-        description="Inorganic Reaction Product Predictor, reaction graph model with actions")
-
-    # dataset inputs
-    parser.add_argument("--data-path",
-                        type=str,
-                        default="data/datasets/dataset_10_precs.pkl",
-                        metavar="PATH",
-                        help="dataset path")
-    parser.add_argument("--fea-path",
-                        type=str,
-                        default="data/embeddings/magpie_embed_10_precs.json",
-                        metavar="PATH",
-                        help="Precursor feature path")
-    parser.add_argument('--action-rnn',
-	                    type=str,
-                        nargs='?',
-                        default='models/checkpoint_rnn_f-1_s-0_t-1.pth.tar',
-	                    help="Path to trained action autoencoder")
-    parser.add_argument('--action-path',
-	                    type=str,
-                        nargs='?',
-                        default='data/datasets/action_dict_10_precs.json',
-	                    help="Path to action dictionary")
-    parser.add_argument('--elem-path',
-	                    type=str,
-                        nargs='?',
-                        default='data/datasets/elem_dict_10_precs.json',
-	                    help="Path to element dictionary")
-    parser.add_argument('--prec-type',
-	                    type=str,
-                        nargs='?',
-                        default='magpie',
-	                    help="Type of input, stoich or magpie")
-    parser.add_argument('--latent-dim',
-                        type=int,
-                        nargs='?',
-                        default=32,
-                        help='Latent dimension for RNN hidden state')
-    parser.add_argument('--intermediate-dim',
-                        type=int,
-                        nargs='?',
-                        default=256,
-                        help='Intermediate model dimension')
-    parser.add_argument('--target-dim',
-                        type=int,
-                        nargs='?',
-                        default=81,
-                        help='Target vector dimension')
-    parser.add_argument("--prec-fea-len",
-                        default=128,
-                        type=int,
-                        metavar="N",
-                        help="Dimension of node features")
-    parser.add_argument("--n-graph",
-                        default=5,
-                        type=int,
-                        metavar="N",
-                        help="number of graph layers")
-    parser.add_argument('--mask',
-                        action="store_true",
-                        default=False,
-                        help="Whether to mask output with precursor elements or not")
-    parser.add_argument('--amounts',
-                        action="store_true",
-                        default=False,
-                        help="use precursor amounts as weights")
-
-
-    parser.add_argument("--disable-cuda",
-                        action="store_true",
-                        help="Disable CUDA")
-
-    # restart inputs
-    parser.add_argument("--evaluate",
-                        action="store_true",
-                        help="skip network training stages checkpoint")
-
-    # dataloader inputs
-    parser.add_argument("--workers",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="number of data loading workers (default: 0)")
-    parser.add_argument("--batch-size", "--bsize",
-                        default=256,
-                        type=int,
-                        metavar="N",
-                        help="mini-batch size (default: 256)")
-    parser.add_argument("--val-size",
-                        default=0.0,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data used for validation")
-    parser.add_argument("--test-size",
-                        default=0.2,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data for testing")
-    parser.add_argument("--seed",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="seed for random number generator")
-    parser.add_argument("--sample",
-                        default=1,
-                        type=int,
-                        metavar="N",
-                        help="sub-sample the training set for learning curves")
-
-    # optimiser inputs
-    parser.add_argument("--epochs",
-                        default=60,
-                        type=int,
-                        metavar="N",
-                        help="number of total epochs to run")
-    parser.add_argument("--loss",
-                        default="BCE",
-                        type=str,
-                        metavar="str",
-                        help="choose a Loss Function")
-    parser.add_argument("--threshold",
-                        default=0.9,
-                        type=float,
-                        metavar='prob',
-                        help="Threshold for element presence in product (probability)")
-    parser.add_argument("--reg-weight",
-                        default=0,
-                        type=float,
-                        metavar="float",
-                        help="Weight for regularisation loss")
-    parser.add_argument("--optim",
-                        default="Adam",
-                        type=str,
-                        metavar="str",
-                        help="choose an optimizer; SGD, Adam or AdamW")
-    parser.add_argument("--learning-rate", "--lr",
-                        default=0.0001,
-                        type=float,
-                        metavar="float",
-                        help="initial learning rate (default: 3e-4)")
-    parser.add_argument("--momentum",
-                        default=0.9,
-                        type=float,
-                        metavar="float [0,1]",
-                        help="momentum (default: 0.9)")
-    parser.add_argument("--weight-decay",
-                        default=1e-6,
-                        type=float,
-                        metavar="float [0,1]",
-                        help="weight decay (default: 0)")
-
-    # ensemble inputs
-    parser.add_argument("--fold-id",
-                        default=1,
-                        type=int,
-                        metavar="N",
-                        help="identify the fold of the data")
-    parser.add_argument("--run-id",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="ensemble model id")
-    parser.add_argument("--ensemble",
-                        default=1,
-                        type=int,
-                        metavar="N",
-                        help="number ensemble repeats")
-
-    # transfer learning
-    parser.add_argument('--train-rnn',
-                        action="store_true",
-                        default=False,
-                        help="Train rnn for elem prediction as well")
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
-    parser.add_argument("--clr",
-                        default=True,
-                        type=bool,
-                        help="use a cyclical learning rate schedule")
-    parser.add_argument("--clr-period",
-                        default=100,
-                        type=int,
-                        help="how many learning rate cycles to perform")
-    parser.add_argument("--resume",
-                        action="store_true",
-                        help="resume from previous checkpoint")
-    parser.add_argument("--transfer",
-                        type=str,
-                        metavar="PATH",
-                        help="checkpoint path for transfer learning")
-    parser.add_argument("--fine-tune",
-                        type=str,
-                        metavar="PATH",
-                        help="checkpoint path for fine tuning")
-
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.lr_search:
-        args.learning_rate = 1e-8
-
-    args.device = torch.device("cuda") if (not args.disable_cuda) and  \
-        torch.cuda.is_available() else torch.device("cpu")
-
-    return args
 
 class ReactionData(Dataset):
     """
@@ -244,12 +35,11 @@ class ReactionData(Dataset):
             Whether to use molar amounts of precursors
         """
         # dataset
-        assert os.path.exists(data_path), \
-            "{} does not exist!".format(data_path)
+        assert os.path.exists(data_path), f"{data_path} does not exist!"
         with open(data_path, 'rb') as f:
-            #data = pkl.load(f)
             df = pkl.load(f)
-        print(df)
+        # print(df)
+        # print(df.columns)
         self.df = df
 
         # embeddings
@@ -270,17 +60,17 @@ class ReactionData(Dataset):
 
         # actions
         self.actions = df['actions'].tolist()
+
         # dictionary of action sequences
-        assert os.path.exists(action_dict_path), \
-            "{} does not exist!".format(action_dict_path)
+        assert os.path.exists(action_dict_path), f"{action_dict_path} does not exist!"
         with open(action_dict_path, 'r') as json_file:
             action_dict = json.load(json_file)
-        action_dict_aug = {k:v+3 for k,v in action_dict.items()}
+
+        action_dict_aug = {k: v+3 for k, v in action_dict.items()}
         action_dict_aug['<SOS>'] = 1
         action_dict_aug['<EOS>'] = 2
         action_dict_aug['<PAD>'] = 0
         self.action_dict = action_dict_aug
-        print(action_dict_aug)
         self.action_fea_dim = len(action_dict_aug)
 
     def __len__(self):
@@ -322,7 +112,8 @@ class ReactionData(Dataset):
             input id for the reaction
         """
         # get the materials and target for a particular reaction
-        _, prec_stoich, _, _, materials, actions_raw, target = self.df.iloc[idx]
+        # print(self.df.iloc[idx])
+        prec_stoich, materials, actions_raw, target = self.df.iloc[idx][["prec_stoich", "prec_roost_am", "actions", "target"]]
         precursors = [prec[0] for prec in materials]
 
         if self.amounts:
@@ -338,8 +129,7 @@ class ReactionData(Dataset):
 
         if self.prec_type == 'magpie':
             # get embeddings for materials
-            material_fea = np.vstack([self.prec_features.get_fea(prec)
-                                    for prec in precursors])
+            material_fea = np.vstack([self.prec_features.get_fea(prec) for prec in precursors])
         elif self.prec_type == 'stoich':
             # use stoich as element embeddings, ignoring empty ones
             material_fea = np.vstack([prec for prec in prec_stoich if not len(np.nonzero(prec)[0]) < 1])
@@ -369,8 +159,9 @@ class ReactionData(Dataset):
         # get elements in precursors
         all_precs = torch.sum(torch.Tensor(prec_stoich), dim=0)
         # add other elements
+        # TODO add in argument to not add in oxygen if inert
         all_precs[self.elem_dict['O']] += 1
-        #all_precs[self.elem_dict['H']] += 1
+        # all_precs[self.elem_dict['H']] += 1
         prec_elems = torch.where(all_precs != 0, torch.ones_like(all_precs), all_precs)
 
         # convert all data to tensors
@@ -491,66 +282,6 @@ def collate_batch(dataset_list):
         torch.stack(batch_target, dim=0), \
         batch_comp, \
         batch_reaction_ids
-
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
-class Featuriser(object):
-    """
-    Base class for featurising nodes and edges.
-    """
-    def __init__(self, allowed_types):
-        self.allowed_types = set(allowed_types)
-        self._embedding = {}
-
-    def get_fea(self, key):
-        assert key in self.allowed_types, "{} is not an allowed material type".format(key)
-        return self._embedding[key]
-
-    def load_state_dict(self, state_dict):
-        self._embedding = state_dict
-        self.allowed_types = set(self._embedding.keys())
-
-    def get_state_dict(self):
-        return self._embedding
-
-    def embedding_size(self):
-        return len(self._embedding[list(self._embedding.keys())[0]])
-
-class LoadFeaturiser(Featuriser):
-    """
-    Initialize precursor feature vectors using a JSON file, which is a python
-    dictionary mapping from material to a list representing the
-    feature vector of the precursor.
-
-    Parameters
-    ----------
-    embedding_file: str
-        The path to the .json file
-    """
-    def __init__(self, embedding_file):
-        with open(embedding_file) as f:
-            embedding = json.load(f)
-        allowed_types = set(embedding.keys())
-        super(LoadFeaturiser, self).__init__(allowed_types)
-        for key, value in embedding.items():
-            self._embedding[key] = np.array(value, dtype=float)
 
 
 if __name__ == "__main__":
