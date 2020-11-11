@@ -112,21 +112,11 @@ venv.bak/
 
 #vscode
 .vscode/
-checkpoint.pth.tar
-model_best.pth.tar
-test_results*
-ensemble_results*
 
 runs/
 results/
 models/
-cds3/
-
-*.pth.tar
-
-sampnn/crossval.py
 
 .ipynb_checkpoints/
 
-*.pdf
 .DS_Store
