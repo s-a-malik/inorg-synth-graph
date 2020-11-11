@@ -14,13 +14,27 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from sklearn.model_selection import train_test_split as split
-from sklearn.metrics import r2_score, hamming_loss, accuracy_score, f1_score
+from sklearn.metrics import (
+    r2_score,
+    hamming_loss,
+    accuracy_score,
+    f1_score,
+)
 
 from reaction_graph_actions.model import ReactionNet
 from reaction_graph_actions.action_rnn import LSTM
-from reaction_graph_actions.data import input_parser, ReactionData, collate_batch
-from reaction_graph_actions.utils import evaluate, save_checkpoint, \
-                        load_previous_state, cyclical_lr, LRFinder
+from reaction_graph_actions.data import (
+    input_parser,
+    ReactionData,
+    collate_batch,
+)
+from reaction_graph_actions.utils import (
+    evaluate,
+    save_checkpoint,
+    load_previous_state,
+    cyclical_lr,
+    LRFinder
+)
 
 
 def get_class_weights(generator):
@@ -29,19 +43,20 @@ def get_class_weights(generator):
     all_targets = []
     for _, target, _, _ in generator:
         all_targets += target.tolist()
-    #print(all_targets[:5])
+    # print(all_targets[:5])
     all_targets = torch.Tensor(all_targets)
-    #print(all_targets.shape)
+    # print(all_targets.shape)
     # get weights of elements in batch
     num_elements = float(len(all_targets)) - (all_targets == 0).sum(dim=0)
-    #print(num_elements)
+    # print(num_elements)
     max_num_elements = torch.max(num_elements)
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
-    #print(max_num_elements_tensor)
+    # print(max_num_elements_tensor)
     weights = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
     print(weights)
 
     return weights.to(args.device)
+
 
 def custom_loss(output, target_labels):
     """loss function with batchwise weighting and regularisation
@@ -63,20 +78,24 @@ def custom_loss(output, target_labels):
 
     return comp_loss + (args.reg_weight*reg_loss)
 
+
 def init_model(pretrained_rnn, orig_prec_fea_len):
 
-    model = ReactionNet(pretrained_rnn=pretrained_rnn,
-                            orig_prec_fea_len=orig_prec_fea_len,
-                            prec_fea_len=args.prec_fea_len,
-                            n_graph=args.n_graph,
-                            intermediate_dim=args.intermediate_dim,
-                            target_dim=args.target_dim,
-                            mask=args.mask)
+    model = ReactionNet(
+        pretrained_rnn=pretrained_rnn,
+        orig_prec_fea_len=orig_prec_fea_len,
+        prec_fea_len=args.prec_fea_len,
+        n_graph=args.n_graph,
+        intermediate_dim=args.intermediate_dim,
+        target_dim=args.target_dim,
+        mask=args.mask
+    )
 
     model.to(args.device)
     print(model)
 
     return model
+
 
 def init_optim(model, weights=None):
 
@@ -86,7 +105,7 @@ def init_optim(model, weights=None):
         criterion = nn.BCEWithLogitsLoss()
     elif args.loss == "BCEweighted":
         if weights == None:
-            criterion = nn.BCEWithLogitsLoss()            
+            criterion = nn.BCEWithLogitsLoss()
         else:
             criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
     elif args.loss == "custom":
@@ -124,29 +143,43 @@ def init_optim(model, weights=None):
 
 def main():
 
-    dataset = ReactionData(data_path=args.data_path,
-                              fea_path=args.fea_path,
-                              action_dict_path=args.action_path,
-                              elem_dict_path=args.elem_path,
-                              prec_type=args.prec_type,
-                              amounts=args.amounts)
+    dataset = ReactionData(
+        data_path=args.data_path,
+        fea_path=args.fea_path,
+        action_dict_path=args.action_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        amounts=args.amounts
+    )
+
     orig_prec_fea_len = dataset.prec_fea_dim
     orig_action_fea_len = dataset.action_fea_dim
     print('orig precursor fea dim', orig_prec_fea_len)
     print('action fea dim', orig_action_fea_len)
 
     # load pretrained rnn
-    rnn = LSTM(orig_action_fea_len, args.latent_dim, args.device, num_layers=1, embedding_dim=8)
-    print('loading pretrained RNN...')
-    previous_state = load_previous_state(args.action_rnn,
-                                            rnn,
-                                            args.device)
-    pretrained_rnn, _, _, _, _ = previous_state
+    rnn = LSTM(
+        input_dim=orig_action_fea_len,
+        latent_dim=args.latent_dim,
+        device=args.device,
+        num_layers=1,
+        embedding_dim=8
+    )
+
+    if args.action_rnn:
+        print('loading pretrained RNN...')
+        previous_state = load_previous_state(
+            path=args.action_rnn,
+            model=rnn,
+            device=args.device
+        )
+        pretrained_rnn, _, _, _, _ = previous_state
+
     if not args.train_rnn:
         # stops autograd from changing parameters of trained network
         for p in pretrained_rnn.parameters():
             p.requires_grad = False
-    
+
     # skip to evaluate whole dataset if testing all
     if args.test_size == 1.0:
         test_ensemble(args.fold_id, args.ensemble, dataset, orig_prec_fea_len, pretrained_rnn)
@@ -159,14 +192,10 @@ def main():
     train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
     test_set = torch.utils.data.Subset(dataset, test_idx)
 
-    if not os.path.isdir("models/"):
-        os.makedirs("models/")
-
-    if not os.path.isdir("runs/"):
-        os.makedirs("runs/")
-
-    if not os.path.isdir("results/"):
-        os.makedirs("results/")
+    # Ensure directory structure present
+    os.makedirs(f"models/", exist_ok=True)
+    os.makedirs("runs/", exist_ok=True)
+    os.makedirs("results/", exist_ok=True)
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
@@ -219,7 +248,7 @@ def ensemble(fold_id, dataset, test_set,
                 model, _, _, _, _ = previous_state
                 model.to(args.device)
                 criterion, optimizer, scheduler = init_optim(model, weights=weights)
-            
+
             lr_finder = LRFinder(model, optimizer, criterion,
                                  metric="mse", device=args.device)
             lr_finder.range_test(train_generator, end_lr=1,
@@ -429,10 +458,10 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
         y_ensemble_prec_embed[j,:] = prec_embed
 
 
-    y_pred = np.mean(y_ensemble, axis=0)  
+    y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
     y_test = np.array(y_test)
-    
+
     # thresholds for element prediction
     thresholds = np.linspace(0.005, 0.99, 100)
     subset_acc_dict = {}
@@ -440,9 +469,9 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
     f1 = {}
     test_elems = y_test != 0                # bool 2d array
     for threshold in thresholds:
-        logit_threshold = np.log(threshold / (1 - threshold)) 
+        logit_threshold = np.log(threshold / (1 - threshold))
         pred_elems = y_pred > logit_threshold
-        # metrics: 
+        # metrics:
         subset_acc_dict[threshold] = accuracy_score(test_elems, pred_elems)
         f1[threshold] = f1_score(test_elems, pred_elems, average='weighted', zero_division=0)
         hamming_dict[threshold] = hamming_loss(test_elems, pred_elems)
@@ -460,7 +489,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
     print("Subset 0/1 scores:", subset_acc_dict)
     print("Hamming Loss:", hamming_dict)
     print("F1 Score (weighted):", f1)
-    
+
     print("y_pred", np.shape(y_pred))
     print("y_prec_embed", np.shape(y_prec_embed))
     print("y_test", np.shape(y_test))

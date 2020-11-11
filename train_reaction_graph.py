@@ -84,7 +84,7 @@ def init_optim(model, weights=None):
         criterion = nn.BCEWithLogitsLoss()
     elif args.loss == "BCEweighted":
         if weights == None:
-            criterion = nn.BCEWithLogitsLoss()            
+            criterion = nn.BCEWithLogitsLoss()
         else:
             criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
     elif args.loss == "custom":
@@ -127,14 +127,14 @@ def main():
                               elem_dict_path=args.elem_path,
                               prec_type=args.prec_type,
                               amounts=args.amounts)
+
     orig_prec_fea_len = dataset.prec_fea_dim
     print(orig_prec_fea_len)
-    
+
     # skip to evaluate whole dataset if testing all
     if args.test_size == 1.0:
         test_ensemble(args.fold_id, args.ensemble, dataset, orig_prec_fea_len)
         return
-
 
     indices = list(range(len(dataset)))
     train_idx, test_idx = split(indices, random_state=args.seed,
@@ -143,14 +143,10 @@ def main():
     train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
     test_set = torch.utils.data.Subset(dataset, test_idx)
 
-    if not os.path.isdir("models/"):
-        os.makedirs("models/")
-
-    if not os.path.isdir("runs/"):
-        os.makedirs("runs/")
-
-    if not os.path.isdir("results/"):
-        os.makedirs("results/")
+    # Ensure directory structure present
+    os.makedirs(f"models/", exist_ok=True)
+    os.makedirs("runs/", exist_ok=True)
+    os.makedirs("results/", exist_ok=True)
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
@@ -202,7 +198,7 @@ def ensemble(fold_id, dataset, test_set,
                 model, _, _, _, _ = previous_state
                 model.to(args.device)
                 criterion, optimizer, scheduler = init_optim(model, weights=weights)
-            
+
             lr_finder = LRFinder(model, optimizer, criterion,
                                  metric="mse", device=args.device)
             lr_finder.range_test(train_generator, end_lr=1,
@@ -404,34 +400,38 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
         model.load_state_dict(checkpoint["state_dict"])
 
         model.eval()
-        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = evaluate(generator=test_generator,
-                                            model=model,
-                                            criterion=criterion,
-                                            optimizer=None,
-                                            device=args.device,
-                                            threshold=args.threshold,
-                                            task="test")
+        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = evaluate(
+            generator=test_generator,
+            model=model,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="test"
+        )
         y_ensemble[j,:] = pred
         y_ensemble_prec_embed[j,:] = prec_embed
 
 
-    y_pred = np.mean(y_ensemble, axis=0)  
+    y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
     y_test = np.array(y_test)
-    
+
     # thresholds for element prediction
     thresholds = np.linspace(0.005, 0.99, 100)
     subset_acc_dict = {}
     hamming_dict = {}
     f1 = {}
     test_elems = y_test != 0                # bool 2d array
+
     for threshold in thresholds:
-        logit_threshold = np.log(threshold / (1 - threshold)) 
+        logit_threshold = np.log(threshold / (1 - threshold))
         pred_elems = y_pred > logit_threshold
-        # metrics: 
+        # metrics:
         subset_acc_dict[threshold] = accuracy_score(test_elems, pred_elems)
         f1[threshold] = f1_score(test_elems, pred_elems, average='weighted', zero_division=0)
         hamming_dict[threshold] = hamming_loss(test_elems, pred_elems)
+
     max_acc = max(subset_acc_dict.values())
     best_subset_acc = [{k:v} for k, v in subset_acc_dict.items() if v == max_acc]
     best_thresh = list(best_subset_acc[0].keys())[0]
@@ -446,7 +446,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
     print("Subset 0/1 scores:", subset_acc_dict)
     print("Hamming Loss:", hamming_dict)
     print("F1 Score (weighted):", f1)
-    
+
     print("y_pred", np.shape(y_pred))
     print("y_prec_embed", np.shape(y_prec_embed))
     print("y_test", np.shape(y_test))
