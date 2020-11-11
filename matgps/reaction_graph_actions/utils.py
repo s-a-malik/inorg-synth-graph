@@ -1,15 +1,11 @@
-import os
+
 import torch
-from tqdm.autonotebook import trange
-import math
 import numpy as np
 
-import copy
+from tqdm.autonotebook import trange
 
-from tqdm.autonotebook import tqdm
-from torch.optim.lr_scheduler import _LRScheduler
+from matgps.utils import AverageMeter
 
-from ..utils import AverageMeter
 
 def evaluate(generator, model, criterion, optimizer, device, threshold, task="train", verbose=False):
     """
