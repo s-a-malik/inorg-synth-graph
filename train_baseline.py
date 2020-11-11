@@ -2,6 +2,7 @@ import os
 import gc
 import datetime
 import pickle as pkl
+import argparse
 
 import numpy as np
 import pandas as pd
@@ -17,14 +18,15 @@ from sklearn.model_selection import train_test_split as split
 from sklearn.metrics import r2_score, hamming_loss, accuracy_score, f1_score
 
 from no_graph.model import NoGraphNet
-from no_graph.data import input_parser, ReactionData
+from no_graph.data import ReactionData
 from no_graph.utils import evaluate, save_checkpoint, \
                         load_previous_state, cyclical_lr, \
                         LRFinder
 
 
 def custom_loss(output, target_labels):
-    """loss function with number of elements predictor, weighted by elements in batch. 
+    """
+    loss function with number of elements predictor, weighted by elements in batch.
     Includes a regularisation term as well
     Hyperparameters: reg_weight - weighting given to regularisation loss function
     """
@@ -44,16 +46,18 @@ def custom_loss(output, target_labels):
 
     return comp_loss + (args.reg_weight*reg_loss)
 
-def init_model(max_prec, embedd_dim):
+def init_model(max_prec, embedd_dim, intermediate_dim, target_dim, mask, device):
     """Initialise model"""
 
-    model = NoGraphNet(max_prec=max_prec,
-                       embedding_dim=embedd_dim,
-                       intermediate_dim=args.intermediate_dim,
-                       target_dim=args.target_dim,
-                       mask=args.mask)
+    model = NoGraphNet(
+        max_prec=max_prec,
+        embedding_dim=embedd_dim,
+        intermediate_dim=intermediate_dim,
+        target_dim=target_dim,
+        mask=mask
+    )
 
-    model.to(args.device)
+    model.to(device)
     print(model)
 
     return model
@@ -106,7 +110,7 @@ def main():
                               augment=args.augment)
     embedd_dim = dataset.embedd_dim
     max_prec = dataset.max_prec
-    
+
     # skip to evaluate whole dataset if testing all
     if args.test_size == 1.0:
 
@@ -122,14 +126,10 @@ def main():
     train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
     test_set = torch.utils.data.Subset(dataset, test_idx)
 
-    if not os.path.isdir("models/"):
-        os.makedirs("models/")
-
-    if not os.path.isdir("runs/"):
-        os.makedirs("runs/")
-
-    if not os.path.isdir("results/"):
-        os.makedirs("results/")
+    # Ensure directory structure present
+    os.makedirs(f"models/", exist_ok=True)
+    os.makedirs("runs/", exist_ok=True)
+    os.makedirs("results/", exist_ok=True)
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
@@ -168,34 +168,20 @@ def ensemble(fold_id, dataset, test_set,
     val_generator = DataLoader(val_subset, **params)
 
     if not args.evaluate:
-        if args.lr_search:
-            model = init_model(max_prec, embedd_dim)
-            criterion, optimizer, scheduler = init_optim(model)
-
-            if args.fine_tune:
-                print("Fine tune from a network trained on a different dataset")
-                previous_state = load_previous_state(args.fine_tune,
-                                                     model,
-                                                     args.device)
-                model, _, _, _, _ = previous_state
-                model.to(args.device)
-                criterion, optimizer, scheduler = init_optim(model)
-            
-            lr_finder = LRFinder(model, optimizer, criterion,
-                                 metric="mse", device=args.device)
-            lr_finder.range_test(train_generator, end_lr=1,
-                                 num_iter=100, step_mode="exp")
-            lr_finder.plot()
-            return
-
         for run_id in range(ensemble_folds):
-
             # this allows us to run ensembles in parallel rather than in series
             # by specifiying the run-id arg.
             if ensemble_folds == 1:
                 run_id = args.run_id
 
-            model = init_model(max_prec, embedd_dim)
+            model = init_model(
+                max_prec=max_prec,
+                embedd_dim=embedd_dim,
+                intermediate_dim=args.intermediate_dim,
+                target_dim=args.target_dim,
+                mask=args.mask,
+                device=args.device
+            )
             criterion, optimizer, scheduler = init_optim(model)
 
             writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
@@ -223,26 +209,19 @@ def experiment(fold_id, run_id, args,
     num_param = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("Total Number of Trainable Parameters: {}".format(num_param))
 
-    checkpoint_file = ("models/checkpoint_"
-                       "f-{}_r-{}_s-{}_t-{}.pth.tar").format(fold_id,
-                                                             run_id,
-                                                             args.seed,
-                                                             args.sample)
-    best_file = ("models/best_"
-                 "f-{}_r-{}_s-{}_t-{}.pth.tar").format(fold_id,
-                                                       run_id,
-                                                       args.seed,
-                                                       args.sample)
+    checkpoint_file = (f"models/checkpoint_f-{fold_id}_r-{run_id}_s-{args.seed}_t-{args.sample}.pth.tar")
+    best_file = (f"models/best_f-{fold_id}_r-{run_id}_s-{args.seed}_t-{args.sample}.pth.tar")
 
     if args.resume:
         print("Resume Training from previous model")
-        previous_state = load_previous_state(checkpoint_file,
-                                             model,
-                                             args.device,
-                                             optimizer,
-                                             scheduler)
-        model, optimizer, scheduler, \
-            best_loss, start_epoch = previous_state
+        previous_state = load_previous_state(
+            checkpoint_file,
+            model,
+            args.device,
+            optimizer,
+            scheduler
+        )
+        model, optimizer, scheduler, best_loss, start_epoch = previous_state
         model.to(args.device)
     else:
         if args.fine_tune:
@@ -278,25 +257,29 @@ def experiment(fold_id, run_id, args,
     try:
         for epoch in range(start_epoch, start_epoch+args.epochs):
             # Training
-            t_loss = evaluate(generator=train_generator,
-                                             model=model,
-                                             criterion=criterion,
-                                             optimizer=optimizer,
-                                             device=args.device,
-                                             threshold=args.threshold,
-                                             task="train",
-                                             verbose=True)
+            t_loss = evaluate(
+                generator=train_generator,
+                model=model,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=args.device,
+                threshold=args.threshold,
+                task="train",
+                verbose=True
+            )
 
             # Validation
             with torch.no_grad():
                 # evaluate on validation set
-                val_loss = evaluate(generator=val_generator,
-                                                model=model,
-                                                criterion=criterion,
-                                                optimizer=None,
-                                                device=args.device,
-                                                threshold=args.threshold,
-                                                task="val")
+                val_loss = evaluate(
+                    generator=val_generator,
+                    model=model,
+                    criterion=criterion,
+                    optimizer=None,
+                    device=args.device,
+                    threshold=args.threshold,
+                    task="val"
+                )
 
             # if epoch % args.print_freq == 0:
             print("Epoch: [{}/{}]\n"
@@ -376,28 +359,29 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
         model.load_state_dict(checkpoint["state_dict"])
 
         model.eval()
-        idx, pred, prec_embed, y_test, subset_accuracy, total = evaluate(generator=test_generator,
-                                            model=model,
-                                            criterion=criterion,
-                                            optimizer=None,
-                                            device=args.device,
-                                            threshold=args.threshold,
-                                            task="test")
+        idx, pred, prec_embed, y_test, subset_accuracy, total = evaluate(
+            generator=test_generator,
+            model=model,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="test"
+        )
+
         y_ensemble[j,:] = pred
         y_ensemble_prec_embed[j,:] = prec_embed
-        
 
-
-    y_pred = np.mean(y_ensemble, axis=0)  
+    y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
     y_test = np.array(y_test)
     print(y_pred[:5])
     print(y_prec_embed[:5])
     print(y_test[:5])
     print("Ensemble Performance Metrics:")
-    print("Elements Accuracy on {} images (in final ensemble!): {}".format(total, 
+    print("Elements Accuracy on {} images (in final ensemble!): {}".format(total,
                                                             subset_accuracy/total))
-    
+
     # thresholds for element prediction
     thresholds = np.linspace(0.005, 0.99, 100)
     subset_acc_dict = {}
@@ -411,18 +395,19 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
         else:
             pred_elems = y_pred > logit_threshold
         #print(np.shape(test_elems))
-        #print(np.shape(pred_elems))   
+        #print(np.shape(pred_elems))
 
-        # metrics: 
+        # metrics:
         subset_acc_dict[threshold] = accuracy_score(test_elems, pred_elems)
         f1[threshold] = f1_score(test_elems, pred_elems, average='weighted', zero_division=0)
         hamming_dict[threshold] = hamming_loss(test_elems, pred_elems)
+
     max_acc = max(subset_acc_dict.values())
     best_subset_acc = [{k:v} for k, v in subset_acc_dict.items() if v == max_acc]
     best_thresh = list(best_subset_acc[0].keys())[0]
     #print(best_thresh)
     best_logit_thresh = np.log(best_thresh / (1 - best_thresh))
-    
+
     # get uncertainty estimate from ensemble for best_subset_acc threshold
     ensemble_accs = [accuracy_score(test_elems, pred_logits > best_logit_thresh) for pred_logits in y_ensemble]
     ensemble_error = np.std(ensemble_accs)
@@ -432,12 +417,11 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
     print("Subset 0/1 score", subset_acc_dict)
     print("Hamming Loss:", hamming_dict)
     print("F1 Score (weighted):", f1)
-    
+
     print("y_pred", np.shape(y_pred))
     print("y_prec_embed", np.shape(y_prec_embed))
     print("y_test", np.shape(y_test))
     print("idx", np.shape(idx))
-
 
     # save results
     results = [y_pred, y_test, y_prec_embed, idx]
@@ -449,6 +433,208 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
                                                    args.sample), 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
+
+
+def input_parser():
+    """
+    parse input
+    """
+    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor, baseline model")
+
+    # dataset inputs
+    parser.add_argument("--data-path",
+                        type=str,
+                        default="data/datasets/dataset_prec3_df_all_2104.pkl",
+                        metavar="PATH",
+                        help="dataset path")
+
+    parser.add_argument("--fea-path",
+                        type=str,
+                        default="data/embeddings/magpie_embed_prec3_df_all_2104.json",
+                        metavar="PATH",
+                        help="Precursor feature path")
+
+    parser.add_argument('--elem-path',
+                        type=str,
+                        nargs='?',
+                        default='data/datasets/elem_dict_prec3_df_all_2104.json',
+                        help="Path to element dictionary")
+
+    parser.add_argument('--prec-type',
+                        type=str,
+                        nargs='?',
+                        default='stoich',
+                        help="Type of input, stoich or magpie")
+
+    parser.add_argument('--intermediate-dim',
+                        type=int,
+                        nargs='?',
+                        default=128,
+                        help='Intermediate model dimension')
+
+    parser.add_argument('--target-dim',
+                        type=int,
+                        nargs='?',
+                        default=81,
+                        help='Target vector dimension')
+
+    parser.add_argument('--mask',
+                        action="store_true",
+                        default=False,
+                        help="Whether to mask output with precursor elements or not")
+
+    parser.add_argument("--disable-cuda",
+                        action="store_true",
+                        help="Disable CUDA")
+
+    # restart inputs
+    parser.add_argument("--evaluate",
+                        action="store_true",
+                        help="skip network training and stages checkpoint")
+
+    # dataloader inputs
+    parser.add_argument("--workers",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="number of data loading workers (default: 0)")
+
+    parser.add_argument("--batch-size", "--bsize",
+                        default=128,
+                        type=int,
+                        metavar="N",
+                        help="mini-batch size")
+
+    parser.add_argument("--val-size",
+                        default=0.0,
+                        type=float,
+                        metavar="N",
+                        help="proportion of data used for validation")
+
+    parser.add_argument("--test-size",
+                        default=0.2,
+                        type=float,
+                        metavar="N",
+                        help="proportion of data used for testing")
+
+    parser.add_argument("--seed",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="seed for random number generator")
+
+    parser.add_argument("--sample",
+                        default=1,
+                        type=int,
+                        metavar="N",
+                        help="sub-sample the training set for learning curves")
+
+    # optimiser inputs
+    parser.add_argument("--epochs",
+                        default=300,
+                        type=int,
+                        metavar="N",
+                        help="number of total epochs to run")
+
+    parser.add_argument("--loss",
+                        default="BCE",
+                        type=str,
+                        metavar="str",
+                        help="choose a Loss Function")
+
+    parser.add_argument("--threshold",
+                        default=0.5,
+                        type=float,
+                        metavar='prob',
+                        help="Threshold for element presence in product (probability)")
+
+    parser.add_argument("--reg-weight",
+                        default=0,
+                        type=float,
+                        metavar="float",
+                        help="Weight for regularisation loss")
+
+    parser.add_argument("--optim",
+                        default="SGD",
+                        type=str,
+                        metavar="str",
+                        help="choose an optimizer; SGD, Adam or AdamW")
+
+    parser.add_argument("--learning-rate", "--lr",
+                        default=5e-4,
+                        type=float,
+                        metavar="float",
+                        help="initial learning rate (default: 3e-4)")
+
+    parser.add_argument("--momentum",
+                        default=0.9,
+                        type=float,
+                        metavar="float [0,1]",
+                        help="momentum (default: 0.9)")
+
+    parser.add_argument("--weight-decay",
+                        default=1e-6,
+                        type=float,
+                        metavar="float [0,1]",
+                        help="weight decay (default: 0)")
+
+    # ensemble inputs
+    parser.add_argument("--fold-id",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="identify the fold of the data")
+
+    parser.add_argument("--run-id",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="ensemble model id")
+
+    parser.add_argument("--ensemble",
+                        default=1,
+                        type=int,
+                        metavar="N",
+                        help="number ensemble repeats")
+
+    # transfer learning
+    parser.add_argument("--lr-search",
+                        action="store_true",
+                        help="perform a learning rate search")
+
+    parser.add_argument("--clr",
+                        default=True,
+                        type=bool,
+                        help="use a cyclical learning rate schedule")
+
+    parser.add_argument("--clr-period",
+                        default=100,
+                        type=int,
+                        help="how many learning rate cycles to perform")
+
+    parser.add_argument("--resume",
+                        action="store_true",
+                        help="resume from previous checkpoint")
+
+    parser.add_argument("--transfer",
+                        type=str,
+                        metavar="PATH",
+                        help="checkpoint path for transfer learning")
+
+    parser.add_argument("--fine-tune",
+                        type=str,
+                        metavar="PATH",
+                        help="checkpoint path for fine tuning")
+
+    args = parser.parse_args(sys.argv[1:])
+
+    if args.lr_search:
+        args.learning_rate = 1e-8
+
+    args.device = torch.device("cuda") if (not args.disable_cuda) and  \
+        torch.cuda.is_available() else torch.device("cpu")
+
+    return args
 
 
 if __name__ == "__main__":
