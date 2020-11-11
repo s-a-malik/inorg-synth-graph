@@ -1,126 +1,74 @@
 import os
-import torch
-from tqdm.autonotebook import trange
+import json
 import shutil
-import math
 import numpy as np
 
-import copy
-
-from tqdm.autonotebook import tqdm
+import torch
 from torch.optim.lr_scheduler import _LRScheduler
+
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import Line2D
 
-from torch.optim import Optimizer
-from reaction_graph.data import AverageMeter
 
-def plot_grad_flow(named_parameters):
-    '''Plots the gradients flowing through different layers in the net during training.
-    Can be used for checking for possible gradient vanishing / exploding problems.
-    
-    Usage: Plug this function in Trainer class after loss.backwards() as 
-    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow
-    
-    Source: https://discuss.pytorch.org/t/check-gradient-flow-in-network/15063/10
-    '''
-    ave_grads = []
-    max_grads= []
-    layers = []
-    for n, p in named_parameters:
-        if(p.requires_grad) and not (any(s in n for s in ["bias"])):
-            #print(n, p.grad)
-            layers.append(n)
-            ave_grads.append(p.grad.abs().mean())
-            max_grads.append(p.grad.abs().max())
-    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
-    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
-    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
-    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
-    plt.xlabel("Layers")
-    plt.ylabel("average gradient")
-    plt.title("Gradient flow")
-    plt.grid(True)
-    plt.legend([Line2D([0], [0], color="c", lw=4),
-                Line2D([0], [0], color="b", lw=4),
-                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
-    plt.tight_layout()
-    plt.savefig('test.png')
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
 
-def evaluate(generator, model, criterion, optimizer, device, threshold, task="train", verbose=False):
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+class Featuriser(object):
     """
-    evaluate the model
+    Base class for featurising nodes and edges.
     """
+    def __init__(self, allowed_types):
+        self.allowed_types = set(allowed_types)
+        self._embedding = {}
 
-    if task == "test":
-        model.eval()
-        test_targets = []
-        test_pred = []
-        test_react_embed = []
-        test_ids = []
-        test_comp = []
-        test_total = 0
-        subset_accuracy = 0
-    else:
-        loss_meter = AverageMeter()
-        if task == "val":
-            model.eval()
-        elif task == "train":
-            model.train()
-        else:
-            raise NameError("Only train, val or test is allowed as task")
+    def get_fea(self, key):
+        assert key in self.allowed_types, "{} is not an allowed material type".format(key)
+        return self._embedding[key]
 
-    with trange(len(generator), disable=(not verbose)) as t:
-        for input_, target, batch_comp, batch_ids in generator:
-          
-            # move tensors to GPU
-            input_ = (tensor.to(device) for tensor in input_)
-            target = target.to(device)
-            #print(target)
-            
-            # compute output
-            output, react_embed = model(*input_)
+    def load_state_dict(self, state_dict):
+        self._embedding = state_dict
+        self.allowed_types = set(self._embedding.keys())
 
-            if task == "test":
+    def get_state_dict(self):
+        return self._embedding
 
-                # collect the model outputs
-                test_ids += batch_ids
-                test_comp += batch_comp
-                test_targets += target.tolist()
-                test_pred += output.tolist()
-                test_react_embed += react_embed.tolist()
-                # add threshold and get element prediction
-                logit_threshold = torch.tensor(threshold/ (1 - threshold)).log()
-                test_elems = output > logit_threshold   # bool 2d array
-                target_elems = target != 0                # bool array
+    def embedding_size(self):
+        return len(self._embedding[list(self._embedding.keys())[0]])
 
-                # metrics: 
-                # fully correct - subset accuracy
-                correct_row = [torch.all(test_elems[x].eq(target_elems[x])) for x in range(len(test_elems))]
-                subset_accuracy += np.count_nonzero(correct_row)   # number of perfect matches in batch
-                test_total += target.size(0)
-            else:
-                # get predictions and error
-                # make targets into labels for classification
-                target_labels = torch.where(target != 0, torch.ones_like(target), target)
-                loss = criterion(output, target_labels)
-                loss_meter.update(loss.data.cpu().item(), target.size(0))
 
-                if task == "train":
-                    # compute gradient and do SGD step
-                    optimizer.zero_grad()
-                    loss.backward()
-                    #plot_grad_flow(model.named_parameters())
-                    optimizer.step()
+class LoadFeaturiser(Featuriser):
+    """
+    Initialize precursor feature vectors using a JSON file, which is a python
+    dictionary mapping from material to a list representing the
+    feature vector of the precursor.
 
-            t.update()
-
-    if task == "test":
-        return test_ids, test_comp, test_pred, test_react_embed, test_targets, subset_accuracy, test_total
-    else:
-        return loss_meter.avg
+    Parameters
+    ----------
+    embedding_file: str
+        The path to the .json file
+    """
+    def __init__(self, embedding_file):
+        with open(embedding_file) as f:
+            embedding = json.load(f)
+        allowed_types = set(embedding.keys())
+        super(LoadFeaturiser, self).__init__(allowed_types)
+        for key, value in embedding.items():
+            self._embedding[key] = np.array(value, dtype=float)
 
 
 def save_checkpoint(state, is_best,
@@ -151,6 +99,52 @@ def load_previous_state(path, model, device, optimizer=None, scheduler=None):
     print("Loaded '{}'".format(path))
 
     return model, optimizer, scheduler, best_error, start_epoch
+
+
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+
+    Usage: Plug this function in Trainer class after loss.backwards() as
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow
+
+    Source: https://discuss.pytorch.org/t/check-gradient-flow-in-network/15063/10
+    '''
+    ave_grads = []
+    max_grads = []
+    layers = []
+
+    for n, p in named_parameters:
+        if(p.requires_grad) and not (any(s in n for s in ["bias"])):
+            #print(n, p.grad)
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean())
+            max_grads.append(p.grad.abs().max())
+
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k")
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+
+    plt.title("Gradient flow")
+    plt.grid(True)
+
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)],
+                ['max-gradient', 'mean-gradient', 'zero-gradient'])
+
+    plt.tight_layout()
+    plt.savefig('test.png')
+
+
+
 
 
 def cyclical_lr(period=100, cycle_mul=0.2, tune_mul=0.05):
@@ -201,13 +195,13 @@ class LRFinder(object):
     fastai/lr_find: https://github.com/fastai/fastai
 
     EDITS:
-        This function has been edited to make use of the robust MSE model 
+        This function has been edited to make use of the robust MSE model
         we are using and to unpack the inputs which are returned by the
         dataloader as a tuple.
 
     """
 
-    def __init__(self, model, optimizer, criterion, metric="mse", 
+    def __init__(self, model, optimizer, criterion, metric="mse",
                  device=None, memory_cache=True, cache_dir=None):
         self.model = model
         self.optimizer = optimizer

@@ -17,7 +17,7 @@ def input_parser():
     """
     parse input
     """
-    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor," 
+    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor,"
                                                 "reaction graph model")
 
     # dataset inputs
@@ -32,30 +32,30 @@ def input_parser():
                         metavar="PATH",
                         help="Precursor feature path")
     parser.add_argument('--elem-path',
-	                    type=str,   
-                        nargs='?',  
-                        default='data/datasets/elem_dict_prec3_df_all_2104.json', 
+	                    type=str,
+                        nargs='?',
+                        default='data/datasets/elem_dict_prec3_df_all_2104.json',
 	                    help="Path to element dictionary")
     parser.add_argument('--prec-type',
-	                    type=str,   
-                        nargs='?',  
-                        default='stoich', 
+	                    type=str,
+                        nargs='?',
+                        default='stoich',
 	                    help="Type of input, stoich or magpie")
     parser.add_argument('--intermediate-dim',
-                        type=int,   
-                        nargs='?', 
+                        type=int,
+                        nargs='?',
                         default=128,
                         help='Intermediate model dimension')
     parser.add_argument('--target-dim',
-                        type=int,   
-                        nargs='?', 
+                        type=int,
+                        nargs='?',
                         default=81,
                         help='Target vector dimension')
     parser.add_argument('--mask',
                         action="store_true",
                         default=False,
-                        help="Whether to mask output with precursor elements or not")  
-    
+                        help="Whether to mask output with precursor elements or not")
+
     parser.add_argument("--disable-cuda",
                         action="store_true",
                         help="Disable CUDA")
@@ -212,7 +212,7 @@ class ReactionData(Dataset):
     The ReactionData dataset is a wrapper for the dataset.
     """
     def __init__(self, data_path, fea_path, elem_dict_path, prec_type, amounts):
-        """        
+        """
         Inputs
         ----------
         data_path: string
@@ -242,7 +242,7 @@ class ReactionData(Dataset):
 
         # elem_dict
         with open(elem_dict_path, 'r') as json_file:
-            elem_dict = json.load(json_file) 
+            elem_dict = json.load(json_file)
         self.elem_dict = elem_dict
 
         self.amounts = amounts
@@ -282,14 +282,14 @@ class ReactionData(Dataset):
         # get the materials and target for a particular reaction
         _, prec_stoich, _, _, materials, _, target = self.df.iloc[idx]
         precursors = [prec[0] for prec in materials]
-        
+
         if self.amounts:
             # use precursor amounts as weighting
             weights = [prec[1] for prec in materials]
         else:
             # make weights for materials equal
             weights = [1 for prec in materials]
-        
+
         weights = np.atleast_2d(weights).T / np.sum(weights)
         assert len(precursors) != 1, \
             "crystal {}: {}, is a pure system".format(idx, precursors)
@@ -347,7 +347,7 @@ def collate_batch(dataset_list):
     dataset_list: list of tuples for each data point.
         (prec_weights, prec_fea, self_fea_idx, nbr_fea_idx, prec_elems),
             target, comp, reaction_id)
-        
+
         prec_weights: torch.Tensor shape (n_i)
         prec_fea: torch.Tensor shape (n_i, prec_fea_len)
         self_fea_idx: torch.LongTensor shape (n_i*n_i)
@@ -422,73 +422,16 @@ def collate_batch(dataset_list):
         batch_reaction_ids
 
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
 
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
-class Featuriser(object):
-    """
-    Base class for featurising nodes and edges.
-    """
-    def __init__(self, allowed_types):
-        self.allowed_types = set(allowed_types)
-        self._embedding = {}
-
-    def get_fea(self, key):
-        assert key in self.allowed_types, "{} is not an allowed material type".format(key)
-        return self._embedding[key]
-
-    def load_state_dict(self, state_dict):
-        self._embedding = state_dict
-        self.allowed_types = set(self._embedding.keys())
-
-    def get_state_dict(self):
-        return self._embedding
-
-    def embedding_size(self):
-        return len(self._embedding[list(self._embedding.keys())[0]])
-
-class LoadFeaturiser(Featuriser):
-    """
-    Initialize precursor feature vectors using a JSON file, which is a python
-    dictionary mapping from material to a list representing the
-    feature vector of the precursor.
-
-    Parameters
-    ----------
-    embedding_file: str
-        The path to the .json file
-    """
-    def __init__(self, embedding_file):
-        with open(embedding_file) as f:
-            embedding = json.load(f)
-        allowed_types = set(embedding.keys())
-        super(LoadFeaturiser, self).__init__(allowed_types)
-        for key, value in embedding.items():
-            self._embedding[key] = np.array(value, dtype=float)
 
 
 if __name__ == "__main__":
-    
+
     data_path = 'data/datasets/dataset_prec10_df_all_2104_prec3_dict.pkl'
     embedding_path = 'data/embeddings/magpie_embed_prec10_df_all_2104.json'
     elem_dict_path = 'data/datasets/elem_dict_prec3_df_all_2104.json'
     dataset = ReactionData(data_path, embedding_path, elem_dict_path, prec_type='magpie', amounts=True)
-    print(dataset.elem_dict) 
+    print(dataset.elem_dict)
     (material_weights, material_fea, self_fea_idx, nbr_fea_idx, prec_elems), \
             target, materials, cry_id = dataset.__getitem__(16064)
 

@@ -17,8 +17,8 @@ def input_parser():
     """
     parse input
     """
-    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor," 
-                                                "reaction graph model with actions")
+    parser = argparse.ArgumentParser(
+        description="Inorganic Reaction Product Predictor, reaction graph model with actions")
 
     # dataset inputs
     parser.add_argument("--data-path",
@@ -32,38 +32,38 @@ def input_parser():
                         metavar="PATH",
                         help="Precursor feature path")
     parser.add_argument('--action-rnn',
-	                    type=str,   
-                        nargs='?',  
-                        default='models/checkpoint_rnn_f-1_s-0_t-1.pth.tar', 
+	                    type=str,
+                        nargs='?',
+                        default='models/checkpoint_rnn_f-1_s-0_t-1.pth.tar',
 	                    help="Path to trained action autoencoder")
     parser.add_argument('--action-path',
-	                    type=str,   
-                        nargs='?',  
-                        default='data/datasets/action_dict_10_precs.json', 
+	                    type=str,
+                        nargs='?',
+                        default='data/datasets/action_dict_10_precs.json',
 	                    help="Path to action dictionary")
     parser.add_argument('--elem-path',
-	                    type=str,   
-                        nargs='?',  
-                        default='data/datasets/elem_dict_10_precs.json', 
+	                    type=str,
+                        nargs='?',
+                        default='data/datasets/elem_dict_10_precs.json',
 	                    help="Path to element dictionary")
     parser.add_argument('--prec-type',
-	                    type=str,   
-                        nargs='?',  
-                        default='magpie', 
+	                    type=str,
+                        nargs='?',
+                        default='magpie',
 	                    help="Type of input, stoich or magpie")
     parser.add_argument('--latent-dim',
-                        type=int,   
-                        nargs='?', 
+                        type=int,
+                        nargs='?',
                         default=32,
-                        help='Latent dimension for RNN hidden state')    
+                        help='Latent dimension for RNN hidden state')
     parser.add_argument('--intermediate-dim',
-                        type=int,   
-                        nargs='?', 
+                        type=int,
+                        nargs='?',
                         default=256,
                         help='Intermediate model dimension')
     parser.add_argument('--target-dim',
-                        type=int,   
-                        nargs='?', 
+                        type=int,
+                        nargs='?',
                         default=81,
                         help='Target vector dimension')
     parser.add_argument("--prec-fea-len",
@@ -79,7 +79,7 @@ def input_parser():
     parser.add_argument('--mask',
                         action="store_true",
                         default=False,
-                        help="Whether to mask output with precursor elements or not")  
+                        help="Whether to mask output with precursor elements or not")
     parser.add_argument('--amounts',
                         action="store_true",
                         default=False,
@@ -190,7 +190,7 @@ def input_parser():
     parser.add_argument('--train-rnn',
                         action="store_true",
                         default=False,
-                        help="Train rnn for elem prediction as well")   
+                        help="Train rnn for elem prediction as well")
     parser.add_argument("--lr-search",
                         action="store_true",
                         help="perform a learning rate search")
@@ -229,7 +229,7 @@ class ReactionData(Dataset):
     The ReactionData dataset is a wrapper for the dataset.
     """
     def __init__(self, data_path, fea_path, action_dict_path, elem_dict_path, prec_type, amounts):
-        """        
+        """
         Inputs
         ----------
         data_path: string
@@ -258,7 +258,7 @@ class ReactionData(Dataset):
 
         # elem_dict
         with open(elem_dict_path, 'r') as json_file:
-            elem_dict = json.load(json_file) 
+            elem_dict = json.load(json_file)
         self.elem_dict = elem_dict
 
         self.amounts = amounts
@@ -267,14 +267,14 @@ class ReactionData(Dataset):
             self.prec_fea_dim = self.prec_features.embedding_size()
         elif prec_type == 'stoich':
             self.prec_fea_dim = len(df['prec_stoich'][0][0])
-        
+
         # actions
         self.actions = df['actions'].tolist()
-        # dictionary of action sequences        
+        # dictionary of action sequences
         assert os.path.exists(action_dict_path), \
             "{} does not exist!".format(action_dict_path)
         with open(action_dict_path, 'r') as json_file:
-            action_dict = json.load(json_file)       
+            action_dict = json.load(json_file)
         action_dict_aug = {k:v+3 for k,v in action_dict.items()}
         action_dict_aug['<SOS>'] = 1
         action_dict_aug['<EOS>'] = 2
@@ -324,14 +324,14 @@ class ReactionData(Dataset):
         # get the materials and target for a particular reaction
         _, prec_stoich, _, _, materials, actions_raw, target = self.df.iloc[idx]
         precursors = [prec[0] for prec in materials]
-        
+
         if self.amounts:
             # use precursor amounts as weighting
             weights = [prec[1] for prec in materials]
         else:
             # make weights for materials equal
             weights = [1 for prec in materials]
-        
+
         weights = np.atleast_2d(weights).T / np.sum(weights)
         assert len(precursors) != 1, \
             "crystal {}: {}, is a pure system".format(idx, precursors)
@@ -402,7 +402,7 @@ def collate_batch(dataset_list):
     dataset_list: list of tuples for each data point.
         (prec_weights, prec_fea, self_fea_idx, nbr_fea_idx, prec_elems),
             target, comp, reaction_id)
-        
+
         prec_weights: torch.Tensor shape (n_i)
         prec_fea: torch.Tensor shape (n_i, prec_fea_len)
         self_fea_idx: torch.LongTensor shape (n_i*n_i)
@@ -554,13 +554,13 @@ class LoadFeaturiser(Featuriser):
 
 
 if __name__ == "__main__":
-    
+
     data_path = 'data/datasets/dataset_prec10_df_all_2104_prec3_dict.pkl'
     embedding_path = 'data/embeddings/magpie_embed_prec10_df_all_2104.json'
     elem_path = 'data/datasets/elem_dict_prec3_df_all_2104.json'
     action_path ='data/datasets/action_dict_prec3_df_all_2104.json'
     dataset = ReactionData(data_path, embedding_path, action_path, elem_path, prec_type='magpie', amounts=True)
-    print(dataset.elem_dict) 
+    print(dataset.elem_dict)
     (material_weights, material_fea, self_fea_idx, nbr_fea_idx, actions, prec_elems), \
             target, materials, cry_id = dataset.__getitem__(16064)
 

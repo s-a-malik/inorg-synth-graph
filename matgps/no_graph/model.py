@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from ..segments import SimpleNetwork, ResidualNetwork
 
 
 class NoGraphNet(nn.Module):
@@ -38,7 +39,7 @@ class NoGraphNet(nn.Module):
         out_hidden = [intermediate_dim, intermediate_dim*2, intermediate_dim*2, intermediate_dim]
         self.output_nn = ResidualNetwork(max_prec*embedding_dim, target_dim, out_hidden)
 
-     
+
     def forward(self, precs, prec_elem_mask):
         """
         Forward pass
@@ -53,7 +54,7 @@ class NoGraphNet(nn.Module):
         Inputs
         ----------
         input: (C, max_prec*embedding_dim)
-        prec_elem_mask: (C, target_dim)   
+        prec_elem_mask: (C, target_dim)
 
         Returns
         -------
@@ -72,81 +73,6 @@ class NoGraphNet(nn.Module):
 
         # output AND the reaction representation (in this case this is the input)
         return output, precs
-
-
-class SimpleNetwork(nn.Module):
-    """
-    Simple Feed Forward Neural Network
-    """
-    def __init__(self, input_dim, output_dim, hidden_layer_dims):
-        """
-        Inputs
-        ----------
-        input_dim: int
-        output_dim: int
-        hidden_layer_dims: list(int)
-
-        """
-        super(SimpleNetwork, self).__init__()
-
-        dims = [input_dim]+hidden_layer_dims
-
-        self.fcs = nn.ModuleList([nn.Linear(dims[i], dims[i+1])
-                                  for i in range(len(dims)-1)])
-        self.acts = nn.ModuleList([nn.LeakyReLU() for _ in range(len(dims)-1)])
-
-        self.fc_out = nn.Linear(dims[-1], output_dim)
-
-    def forward(self, fea):
-        for fc, act in zip(self.fcs, self.acts):
-            fea = act(fc(fea))
-
-        return self.fc_out(fea)
-
-    def __repr__(self):
-        return '{}'.format(self.__class__.__name__)
-
-
-class ResidualNetwork(nn.Module):
-    """
-    Feed forward Residual Neural Network
-    """
-    def __init__(self, input_dim, output_dim, hidden_layer_dims):
-        """
-        Inputs
-        ----------
-        input_dim: int
-        output_dim: int
-        hidden_layer_dims: list(int)
-
-        """
-        super(ResidualNetwork, self).__init__()
-
-        dims = [input_dim]+hidden_layer_dims
-
-        self.fcs = nn.ModuleList([nn.Linear(dims[i], dims[i+1])
-                                  for i in range(len(dims)-1)])
-        # self.bns = nn.ModuleList([nn.BatchNorm1d(dims[i+1])
-        #                           for i in range(len(dims)-1)])
-        self.res_fcs = nn.ModuleList([nn.Linear(dims[i], dims[i+1], bias=False)
-                                      if (dims[i] != dims[i+1])
-                                      else nn.Identity()
-                                      for i in range(len(dims)-1)])
-        self.acts = nn.ModuleList([nn.ReLU() for _ in range(len(dims)-1)])
-
-        self.fc_out = nn.Linear(dims[-1], output_dim)
-
-    def forward(self, fea):
-        # for fc, bn, res_fc, act in zip(self.fcs, self.bns,
-        #                                self.res_fcs, self.acts):
-        #     fea = act(bn(fc(fea)))+res_fc(fea)
-        for fc, res_fc, act in zip(self.fcs, self.res_fcs, self.acts):
-            fea = act(fc(fea))+res_fc(fea)
-
-        return self.fc_out(fea)
-
-    def __repr__(self):
-        return '{}'.format(self.__class__.__name__)
 
 
 class SecondNet(nn.Module):
@@ -171,19 +97,19 @@ class SecondNet(nn.Module):
         out_hidden = [256, 256, 128]
         # input dimension is elem_fea_len (i.e. what it was before training for elements) + target_dim
         # output dimension is target_dim
-        self.last_nn = SimpleNetwork(pretrained_model.output_nn.fcs[0].in_features + pretrained_model.output_nn.fc_out.out_features, 
+        self.last_nn = SimpleNetwork(pretrained_model.output_nn.fcs[0].in_features + pretrained_model.output_nn.fc_out.out_features,
                                     pretrained_model.output_nn.fc_out.out_features,
                                     out_hidden)
 
 
     def forward(self, elem_weights, orig_elem_fea, self_fea_idx,
                 nbr_fea_idx, crystal_elem_idx):
-        
+
         output, crys_fea = self.pretrained_model(elem_weights, orig_elem_fea, self_fea_idx,
                 nbr_fea_idx, crystal_elem_idx)
         # threshold
         output = self.threshold(output)
-        
+
         #concatenate with precursor mixture embedding
         output_with_context = torch.cat([output, crys_fea], dim=1)
 
