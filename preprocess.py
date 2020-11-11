@@ -2,20 +2,21 @@
 Define and save dictionaries for elements, actions, and magpie embeddings
 """
 
-import argparse
-import pickle as pkl
+
+import os
 import json
-from ast import literal_eval
+import argparse
+import numpy as np
+import pandas as pd
+import pickle as pkl
 from itertools import permutations
 
-import numpy as np
-
-from torch.utils.data import random_split
-
-import pandas as pd
 from matminer.featurizers.base import MultipleFeaturizer
 from matminer.featurizers import composition as cf
 from matminer.featurizers.conversions import StrToComposition
+
+from exclude import BAD_DOI, BAD_PRECURSORS, BAD_TARGETS
+
 
 def parse_args():
     """read arguments from command line
@@ -26,76 +27,89 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--dataset',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='data/solid-state_dataset_2019-09-27_upd.json',   # default if no arg provided
-	                    help="Path to dataset to use")
+                        help="Path to dataset to use")
+
     parser.add_argument('--elem-dict',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='data/datasets/elem_dict',   # default if no arg provided
-	                    help="Path to element to index dictionary without extension")
+                        help="Path to element to index dictionary without extension")
+
     parser.add_argument('--action-dict',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='data/datasets/action_dict',   # default if no arg provided
-	                    help="Path to element to index dictionary without extension")   
+                        help="Path to element to index dictionary without extension")
+
     parser.add_argument('--magpie-embed',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='data/embeddings/magpie_embed',   # default if no arg provided
-	                    help="Path to magpie embeddings dictionary without extension")
+                        help="Path to magpie embeddings dictionary without extension")
+
     parser.add_argument('--clean-set',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='data/datasets/dataset',   # default if no arg provided
-	                    help="Path to full clean dataset to use without extension")
+                        help="Path to full clean dataset to use without extension")
+
     parser.add_argument('--ps',
-	                    type=str,   
+                        type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='',   # default if no arg provided
-	                    help="postscript on path for save files")
+                        help="postscript on path for save files")
+
     parser.add_argument('--prec-preprocess',
-	                    type=str,   
+                        type=str,
                         nargs='?',
                         default='df',
-	                    help="type of preprocessing of precursors: df, roost, stoich or magpie")    
+                        help="type of preprocessing of precursors: df, roost, stoich or magpie")
+
     parser.add_argument('--max-prec',
-	                    type=int,   
+                        type=int,
                         nargs='?',
                         default=10,
                         help='Max number of precursors per reaction.')
+
     parser.add_argument('--min-prec',
-	                    type=int,   
+                        type=int,
                         nargs='?',
                         default=2,
                         help='Min number of precursors per reaction. Default 2')
+
     parser.add_argument('--augment',
                         action="store_true",
-                        help="augment data with precursor rearrangements")                 
+                        help="augment data with precursor rearrangements")
+
     parser.add_argument('--amounts',
                         action="store_true",
                         help="add precursor amounts to data")
+
     parser.add_argument('--num-elem',
                         type=int,
                         metavar='N',
                         nargs='?',
                         default=-1,
-                        help='Take N most common elements only. Default: -1 (all)') 
-    parser.add_argument('--dodgy-dois',
-                        type=str,
-                        nargs='?',
-                        default='data/dodgy_dois.txt',
-                        help='Path to txt file with dodgy dois (in list form) not to be used in dataset')
+                        help='Take N most common elements only. Default: -1 (all)')
+
+    # parser.add_argument('--exclude-doi',
+    #                     type=str,
+    #                     nargs='?',
+    #                     default='data/BAD_DOI.txt',
+    #                     help='Path to txt file with dodgy dois (in list form) not to be used in dataset')
 
     args = parser.parse_args()
 
     return args
 
+
 def load_dataset():
     """Load dataset from path listed in arguments.
-    Uses args.dodgy_dois file to selectively remove troublesome reactions
-    Returns trimmed dataset with only reactions with 
+    Uses args.exclude_doi file to selectively remove troublesome reactions
+    Returns trimmed dataset with only reactions with
     args.min_prec <= no. of precursors <= args.max_prec
     """
     # Load raw data
@@ -104,74 +118,22 @@ def load_dataset():
 
     print('Untrimmed dataset size', len(raw_data))
     data = []
-    
-    with open(args.dodgy_dois, 'r') as f:
-        dodgy_dois = literal_eval(f.read())
-    
-    dodgy_prec = ['H5DTPA', 'RE2O3', 'NT', 'NZO', 'HDPE', 'OMG', 'NT3', 
-                'NEG-123', 'TMO', 'HGS', 'NAD', 'NOAH', 'NDC', 'HEBM', 
-                'Si(OEt)4', 'HEFA', 'REO', 'NZCC', 'ND3', 'NLBO', 'M(OH)2',
-                'SrUBO-1', 'ZnO(26170)'] 
-    dodgy_target = ['Cr2*yGe100-xBi2O203+3*y-2*x', 'Ba0.975Sr0.025Ti1-ySnyO3', 
-                    'CeaLa0.4Y2*aCr0.2Mn0.2O1.2+a*(5+b)', 'Zr0.6TiyNb0.267Zn0.133SnxO2+2*x+2*y',
-                    'ScxTi1-x-yGayPb1-x-yBix+yO3','Na10Yb2*yPr2*xZn20Te75O175+3*x+3*y', 
-                    'Na10Yb2*yPr2*xZn20Te75O175+3*x+3*y', 'Pb100-ySiyO100+y-xF2*x', 
-                    'Pb100-ySiyO100+y-xF2*x', 'Pb100-ySiyO100+y-xF2*x', 
-                    'Na100-2*x2Bi2*xP100-2*x2O300+3*x-6*x2', 'Na100-2*x2Bi2*xP100-2*x2O300+3*x-6*x2', 
-                    'Na100-2*x2Bi2*xP100-2*x2O300+3*x-6*x2', 'Mg0.267*aTa0.667*aZn0.067*aPbaO3*a', 
-                    'Mg0.267*aTa0.667*aZn0.067*aPbaO3*a', 'Mg0.267*aTa0.667*aZn0.067*aPbaO3*a', 
-                    'Mg0.267*aTa0.667*aZn0.067*aPbaO3*a', 'Mg0.267*aTa0.667*aZn0.067*aPbaO3*a', 
-                    'ZryTi1-x-yNb0.667*xZn0.333*xPbO3', 'ZryTi1-x-yNb0.667*xZn0.333*xPbO3', 
-                    'ZryTi1-x-yNb0.667*xZn0.333*xPbO3', 'ZryTi1-x-yNb0.667*xZn0.333*xPbO3', 
-                    'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 
-                    'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 'Zr0.519Ti0.471Nb0.001*yO0.75*y', 
-                    'Zr0.519Ti0.471Nb0.001*yO0.75*y', 'K0.5Na0.5Li0.05Nb1.05MnyO3.15+2*y', 
-                    'K0.5Na0.5Li0.05Nb1.05MnyO3.15+2*y', 'TiNbyNi20C0.7+yN0.3', 'TiNbyNi20C0.7+yN0.3', 
-                    'Na0.5*a89Ba11Ti11+a89Bi0.5*a89O33+3*a89', 'Na0.5*a89Ba11Ti11+a89Bi0.5*a89O33+3*a89', 
-                    'Na0.5*a89Ba11Ti11+a89Bi0.5*a89O33+3*a89', 'Na0.5*a89Ba11Ti11+a89Bi0.5*a89O33+3*a89', 
-                    'Y2*xZr100-x-yTiyO200+x', 'Y2*xZr100-x-yTiyO200+x', 'Y2*xZr100-x-yTiyO200+x', 
-                    'Na20Er2*xAuyZn20Te70O170+3*x', 'Li0.05-yCa101P0.35-7*yO1.4-28*y', 
-                    'Li0.05-yCa101P0.35-7*yO1.4-28*y', 'Li0.05-yCa101P0.35-7*yO1.4-28*y', 
-                    'Li0.05-yCa101P0.35-7*yO1.4-28*y', 'Dy0.2-0.2*yFe1-yBi0.8-0.8*yO3-3*y', 
-                    'Dy0.2-0.2*yFe1-yBi0.8-0.8*yO3-3*y', 'Dy0.2-0.2*yFe1-yBi0.8-0.8*yO3-3*y', 
-                    'Dy0.2-0.2*yFe1-yBi0.8-0.8*yO3-3*y', 'Na1+xVxB1-yPyO2+y+3*x', 'Na1+xVxB1-yPyO2+y+3*x', 
-                    'Na1+xVxB1-yPyO2+y+3*x', 'Na1+xVxB1-yPyO2+y+3*x', 'ZnyTe100-yO200-y', 'ZnyTe100-yO200-y', 
-                    'ZnyTe100-yO200-y', 'K2*yGe100-yO200-y', 'K2*yGe100-yO200-y', 'K2*yGe100-yO200-y', 
-                    'Ag2*хZn57P86O272+х', 'Ag2*хZn57P86O272+х', 'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 
-                    'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 
-                    'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 
-                    'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 'Eu2*aCea*(2-2*x)Zr2*a*xO7*a', 
-                    'V2*αCuαO6*α', 'V2*αCuαO6*α', 'V2*αCuαO6*α', 'V2*αCu3*αO8*α', 
-                    'V2*αCu3*αO8*α', 'V2*αCu3*αO8*α', 'V2*αCu2*αO7*α', 'V2*αCu2*αO7*α', 'V2*αCu2*αO7*α', 'TiαCu0.5*αPαO5*α', 
-                    'TiαCu0.5*αPαO5*α', 'TiαCu0.5*αPαO5*α', 'TiαCu0.5*αPαO5*α', 'Ba0.7Sr0.3Ti1-yNb2*yO3+3*y', 'Ba0.7Sr0.3Ti1-yNb2*yO3+3*y', 
-                    'Ba0.7Sr0.3Ti1-yNb2*yO3+3*y', 'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 
-                    'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 
-                    'Ti0.2*aTa0.133*aNb0.4*aZn0.267*aPbaO3*a', 'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 
-                    'Yb2*yEr2*xY20W20Te70-x-yO230+x+y', 'B2*yGe0.25SiP0.05O2.625+3*y', 'B2*yGe0.25SiP0.05O2.625+3*y', 
-                    'Tm2*yLa50-2*yW50B50O300', 'Tm2*yLa50-2*yW50B50O300', 'Tm2*yLa50-2*yW50B50O300', 
-                    'Na20Er2*xAuyZn20Te70O170+3*x', 'Ag2*yTe1-xSeO4+y-2*x', 'Ag2*yTe1-xSeO4+y-2*x', 
-                    'Li2CdxP2-2*yO6-5*yI2*x', 'Li2CdxP2-2*yO6-5*yI2*x', 'Mo1-yAg2+xO4-3*yIx', 'Mo1-yAg2+xO4-3*yIx', 
-                    'Ba0.06CayTi0.06+yO0.18+3*y', 'Ba0.06CayTi0.06+yO0.18+3*y', 'Ba0.06CayTi0.06+yO0.18+3*y', 
-                    'Na54Eu2*yAg2*xAl16B130O246+x+3*y', 'Na54Eu2*yAg2*xAl16B130O246+x+3*y', 'BayFe2-2*x-2*yZn0.1B2O6.1-2*y-3*x', 
-                    'BayFe2-2*x-2*yZn0.1B2O6.1-2*y-3*x', 'BayFe2-2*x-2*yZn0.1B2O6.1-2*y-3*x',
-                    'Ba100-yGd100-yFex*(100-y)Co(2-x)*(100-y)O600-6*y', 'Fe2*xNi0.5*xCu0.5*xO4*x', 
-                    'K0.5*xNa0.5*xNbxO3*x', 'BaxTixO3*x', 'Li2*xZnxGa2*xOx*(6-x)', 'Na2*xGexOx*(3-x)', 
-                    'Sr0.33*xLa0.67*xMnxO3*x', 'Zr0.52*xTi0.48*xPbxO3*x', 'Li2*xB2*xBi2*xOx*(403-x)', 
-                    'MgxB2*xPbxOx*(103-x)', 'MgxB2*xPbxOx*(103-x)', 'MgxB2*xPbxOx*(103-x)', 
-                    'BaxTixFe2*xCo0.03*xNi0.92*xCu0.05*xOx*(8-x)', 'LixFeyOz', 'Zr0.48*xTi0.52*xPbxO3*x', 
-                    'Gd2*xFe2*xP2*xOx*(485-3*x)', 'As2*xTexOx*(8-x)', 'La2*xWxO328*x', 
-                    'Al0.5*xGe5.5*xO26.75*x', 'TixNb0.333*xCo0.667*xPbxBixOx*(6-x)', 'KLaW0.5Mo1.5O8']
-    
+
+    # with open(args.BAD_DOI, 'r') as f:
+    #     BAD_DOI = literal_eval(f.read())
+
     for reaction in range(len(raw_data)):
         # check if number of precursors is within limits and no dodgy precursors
         if (
             len(raw_data[reaction]['precursors']) > args.max_prec or
             len(raw_data[reaction]['precursors']) < args.min_prec or
-            raw_data[reaction]['doi'] in dodgy_dois or
-            any(raw_data[reaction]['targets_string'][x] 
-            in dodgy_target for x in range(len(raw_data[reaction]['targets_string']))) or
-            any(raw_data[reaction]['precursors'][x]['material_formula'] 
-            in dodgy_prec for x in range(len(raw_data[reaction]['precursors']))) 
+            raw_data[reaction]['doi'] in BAD_DOI or
+            any(raw_data[reaction]['targets_string'][x]
+                in BAD_TARGETS for x in range(len(raw_data[reaction]['targets_string']))
+                ) or
+            any(raw_data[reaction]['precursors'][x]['material_formula']
+                in BAD_PRECURSORS for x in range(len(raw_data[reaction]['precursors']))
+                )
         ):
             pass
         else:
@@ -180,6 +142,7 @@ def load_dataset():
     print(f'Trimmed dataset size with {args.max_prec}:', len(data))
 
     return data
+
 
 def normalise(stoich):
     """normalise a stoichiometry vector to composition
@@ -191,6 +154,7 @@ def normalise(stoich):
 
     return stoich
 
+
 def decode_material(encoded_material, vec_to_elem_dict):
     """Input: -  encoded_material: vector
     - vec_to_elem_dict: dict mapping elements to indexes
@@ -200,6 +164,7 @@ def decode_material(encoded_material, vec_to_elem_dict):
 
     return decoded_material
 
+
 def dict_to_formula(material_dict):
     """Input a material in element dict form
     Returns formula of element (arbitrary order)
@@ -208,7 +173,7 @@ def dict_to_formula(material_dict):
     for element, val in material_dict.items():
         if val != 0:
             formula = formula + f'{element}{val}'
-    
+
     return formula
 
 
@@ -220,7 +185,7 @@ def find_elem_dict(data):
     all_elements = []
 
     for reaction in range(len(data)):
-        """ 
+        """
         # elements from precursors
         for precursor in range(len(data[reaction]['precursors'])):
             composition = data[reaction]['precursors'][precursor]['composition']
@@ -233,18 +198,19 @@ def find_elem_dict(data):
         # Remove non-elements
         for x in range(len(composition)):
             elements = composition[x]['elements'].keys()
-            elements = [x if x not in data[reaction]['reaction']['element_substitution']
-                            else data[reaction]['reaction']['element_substitution'][x]
-                            for x in elements]
-            #print(elements)
+            elements = [
+                x if x not in data[reaction]['reaction']['element_substitution']
+                else data[reaction]['reaction']['element_substitution'][x] for x in elements
+            ]
+            # print(elements)
             all_elements = all_elements + elements
-
 
     elem_set = set(all_elements)
     values = range(len(elem_set))
     elem_dict = dict(zip(elem_set, values))   # dictionary mapping element to value
 
     return elem_dict
+
 
 def preprocess_target_stoich(data, elem_dict):
     """takes input data and element dictionary
@@ -257,16 +223,22 @@ def preprocess_target_stoich(data, elem_dict):
     for reaction in range(len(data)):
         composition = data[reaction]['target']['composition']
         # iterate through each material in target and get list of dictionaries elem:stoich for each of them
-        elements = [{element_: '('+stoich_+')*{}'.format(composition[x]["amount"]) for element_, stoich_ in composition[x]['elements'].items()} for x in range(len(composition))]
-        
+        elements = [
+            {
+                element_: '('+stoich_+')*{}'.format(composition[x]["amount"])
+                for element_, stoich_ in composition[x]['elements'].items()
+            }
+            for x in range(len(composition))
+        ]
+
         # add dictionaries together into elements_full
-        elements_full = {} 
+        elements_full = {}
         for x in elements:
             for element, stoich in x.items():
                 # check if element is substituted and replace if so
                 if element in data[reaction]['reaction']['element_substitution']:
                     element = data[reaction]['reaction']['element_substitution'][element]
-                
+
                 if element in elements_full:
                     elements_full[element] = elements_full[element] + '+' + stoich
                 else:
@@ -288,7 +260,7 @@ def preprocess_target_stoich(data, elem_dict):
                 else:
                     dodgy_doi.append(data[reaction]['doi'])
                     dodgy_indices.append(reaction)
-      
+
                 # put in missing division
                 index = stoich.find(var)
                 if index < len(stoich)-1:
@@ -296,7 +268,7 @@ def preprocess_target_stoich(data, elem_dict):
                         # print(stoich)
                         stoich = stoich[:index+1] + '/' + stoich[index+1:]
                         # print(stoich)
-                stoich = stoich.replace(var, '('+str(var_stoich)+')')            
+                stoich = stoich.replace(var, '('+str(var_stoich)+')')
             # if x not replaced
             if any(['x' in stoich, 'y' in stoich, 'z' in stoich, 'a' in stoich]):
                 # print('before', stoich)
@@ -305,7 +277,7 @@ def preprocess_target_stoich(data, elem_dict):
                 # stoich = stoich.replace('z', '0.0')
                 # stoich = stoich.replace('a', '0.0')
                 dodgy_doi.append(data[reaction]['doi'])
-                dodgy_indices.append(reaction)       
+                dodgy_indices.append(reaction)
 
             # evaluate
             try:
@@ -333,10 +305,14 @@ def preprocess_target_stoich(data, elem_dict):
         ohe_encoded = normalise(ohe_encoded)
         targets.append(ohe_encoded)
 
-    if dodgy_doi: print(set(dodgy_doi))
-    if dodgy_indices: print(set(dodgy_indices))
+    if dodgy_doi:
+        print(f"BAD DOI: {set(dodgy_doi)}")
+
+    if dodgy_indices:
+        print(f"BAD IDX: {set(dodgy_indices)}")
 
     return np.array(targets)
+
 
 def preprocess_precursors_stoich(data, elem_dict):
     """takes input data and element dictionary
@@ -353,7 +329,7 @@ def preprocess_precursors_stoich(data, elem_dict):
         precursors_reaction = np.zeros((args.max_prec, len(elem_dict)))
         precursors_reaction_amounts = np.zeros(args.max_prec)
 
-        for precursor in range(len(data[reaction]['precursors'])):      
+        for precursor in range(len(data[reaction]['precursors'])):
             composition = data[reaction]['precursors'][precursor]['composition']
             prec_formula = data[reaction]['precursors'][precursor]['material_formula']
             left_side = data[reaction]['reaction']['left_side']
@@ -380,7 +356,7 @@ def preprocess_precursors_stoich(data, elem_dict):
                 dodgy_doi.append(data[reaction]['doi'])
 
             prec_amount = eval(prec_amount)
-            
+
             if prec_amount == 0:
                 prec_amount = 1
                 dodgy_doi.append(data[reaction]['doi'])
@@ -388,14 +364,14 @@ def preprocess_precursors_stoich(data, elem_dict):
                 print(prec_amount, data[reaction]['doi'])
                 dodgy_doi.append(data[reaction]['doi'])
                 prec_amount = abs(prec_amount)
-                
+
             # get list of dictionaries for each material in precursor
             elements = [{element_: '('+stoich_+')*{}'.format(composition[x]["amount"]) for element_, stoich_ in composition[x]['elements'].items()} for x in range(len(composition))]
             # add dictionaries together into elements_full
-            elements_full = {} 
+            elements_full = {}
             for x in range(len(elements)):
                 for element, stoich in elements[x].items():
-                    
+
                     # check if element is substituted and replace if so
                     if element in data[reaction]['reaction']['element_substitution']:
                         element = data[reaction]['reaction']['element_substitution'][element]
@@ -403,7 +379,7 @@ def preprocess_precursors_stoich(data, elem_dict):
                     # if it could be substituted for multiple elements, just take the first
                     if element in data[reaction]['precursors'][precursor]['elements_vars']:
                         element = data[reaction]['precursors'][precursor]['elements_vars'][element][0]
-                    
+
                     if element in elements_full:
                         elements_full[element] = elements_full[element] + '+' + stoich
                     else:
@@ -426,7 +402,7 @@ def preprocess_precursors_stoich(data, elem_dict):
                         var_stoich = (amount['max_value'] + amount['min_value']) / 2
                     else:
                         var_stoich = 0.0
-                        dodgy_doi.append(data[reaction]['doi'])            
+                        dodgy_doi.append(data[reaction]['doi'])
 
                     index = stoich.find(var)
                     if index < len(stoich)-1:
@@ -440,7 +416,7 @@ def preprocess_precursors_stoich(data, elem_dict):
                     stoich = stoich.replace('x', '0.0')
                     dodgy_doi.append(data[reaction]['doi'])
 
-                try: 
+                try:
                     ohe_encoded[element] = eval(stoich)
                 except NameError:
                     print(stoich)
@@ -457,6 +433,7 @@ def preprocess_precursors_stoich(data, elem_dict):
     if dodgy_doi: print(set(dodgy_doi))
 
     return precursors, precursors_amounts
+
 
 def preprocess_precursors_magpie(data, elem_dict):
     """input data and elem_dict
@@ -482,7 +459,7 @@ def preprocess_precursors_magpie(data, elem_dict):
 
     d = {'reaction': reaction_index, 'composition': prec_string}
     df = pd.DataFrame(data=d)
-    
+
     data = StrToComposition(target_col_id="composition_obj").featurize_dataframe(df, "composition")
 
     # Use the features from MAGPIE
@@ -501,11 +478,12 @@ def preprocess_precursors_magpie(data, elem_dict):
 
     return prec_magpie
 
+
 def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
     """input: data and elem_dict
     encodes for stoich first
-    output: magpie embedding dict for precursors 
-    list of list of tuples for precursors with amounts (formula, amount) 
+    output: magpie embedding dict for precursors
+    list of list of tuples for precursors with amounts (formula, amount)
     If get_all flag is True, then returns all embeddings
     """
     # stoich encoding
@@ -523,7 +501,7 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
                 print(composition)
             reaction_index.append(reaction)
             prec_string.append(composition)
-    
+
     d = {'reaction': reaction_index, 'composition': prec_string}
     df = pd.DataFrame(data=d)
     data = StrToComposition(target_col_id="composition_obj").featurize_dataframe(df, "composition")
@@ -536,19 +514,19 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
     data = data.fillna(value=0)
 
     # Get precursor magpie dictionary. T transposes dataframe
-    prec_magpie = data[['composition', *feature_labels]]  
+    prec_magpie = data[['composition', *feature_labels]]
     prec_magpie_dict = prec_magpie.set_index('composition').T.to_dict('list')
-    
+
     # group by reaction
     formulas = data.groupby('reaction')['composition'].apply(list)
     print(formulas)
-    
+
     if get_all:
         prec_magpie_pre = np.zeros((len(prec_stoich), args.max_prec, len(feature_labels)))
         for reaction in range(len(prec_stoich)):
             reaction_df = data.loc[data['reaction'] == reaction]
             prec_magpie_pre[reaction] = reaction_df[feature_labels].values
-        
+
         prec_roost = []
         prec_roost_am = []
         for reaction, precs in formulas.iteritems():
@@ -567,6 +545,7 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
 
         return prec_formulas, prec_magpie_dict
 
+
 def augment_data(sources, targets):
     """Augment dataset with rearrangments of precursors.
     """
@@ -581,9 +560,10 @@ def augment_data(sources, targets):
 
     return np.array(augmented_sources), np.array(augmented_targets)
 
+
 def remove_rare_elems(data, precs, targets, elem_dict):
     """Find elements to remove from dataset. Keep only top args.num_elem
-    Returns: data_trimmed (list of dicts) 
+    Returns: data_trimmed (list of dicts)
     """
     vec_to_elem_dict = {v: k for k, v in elem_dict.items()}
     total_elems = np.sum(precs, axis=1) + np.array(targets)
@@ -604,8 +584,9 @@ def remove_rare_elems(data, precs, targets, elem_dict):
 
     return data_trimmed
 
+
 def preprocess_actions(data):
-    """Returns: 
+    """Returns:
     - action_dict: a dict mapping actions to integers (corresponding to OHE vector columns)
     - ohe: OHE lists for each action sequence
     """
@@ -615,15 +596,15 @@ def preprocess_actions(data):
 
         operations = data[reaction]['operations']
         actions = [operations[x]['type'] for x in range(len(operations))]       # action type
-        #actions = [operations[x]['string'] for x in range(len(operations))]    # action string
+        # actions = [operations[x]['string'] for x in range(len(operations))]    # action string
         action_sequences.append(actions)
 
-    #get dict of action sequences - mapping a process to an int.
+    # get dict of action sequences - mapping a process to an int.
     action_sequence_set = set(item for t in action_sequences for item in t)
     values = range(len(action_sequence_set))
     action_dict = dict(zip(action_sequence_set, values))
     print(action_dict)
-  
+
     # integer encode actions
     action_sequences_encoded = []
     for reaction in range(len(action_sequences)):
@@ -634,28 +615,37 @@ def preprocess_actions(data):
     for reaction in range(len(action_sequences_encoded)):
         ohe_reaction = []
         # loop over each action in sequence
-        for action in range(len(action_sequences_encoded[reaction])):       
+        for action in range(len(action_sequences_encoded[reaction])):
             ohe_action = [0 for _ in range(len(action_dict))]
-            #set bit corresponding to int to 1
-            ohe_action[action_sequences_encoded[reaction][action]] = 1  
+            # set bit corresponding to int to 1
+            ohe_action[action_sequences_encoded[reaction][action]] = 1
             ohe_reaction.append(ohe_action)
         ohe.append(ohe_reaction)
 
     return ohe, action_dict
 
+
 def save_dataset(data, path):
     """Writes preprocessed data to pickle files
     """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(f'{path}{args.ps}.pkl', 'wb') as f:
         pkl.dump(data, f)
+
     print(f'Dumped to {path}{args.ps}.pkl')
+
 
 def save_dict(data, path):
     """Writes dict to json files
     """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(f'{path}{args.ps}.json', 'w') as f:
         json.dump(data, f)
+
     print(f'Dumped to {path}{args.ps}.json')
+
 
 def build_and_save_df():
     """Assembles all data together into a pandas DataFrame
@@ -667,7 +657,7 @@ def build_and_save_df():
         Dictionary of mapping stoich vector to elements
     magpie_embed:
         dict
-        Dictionary mapping precursors to magpie embeddings (for use in Roost)   
+        Dictionary mapping precursors to magpie embeddings (for use in Roost)
     df:
         pd.Dataframe
         Dataframe with each row giving reaction information
@@ -689,7 +679,7 @@ def build_and_save_df():
     elem_dict = find_elem_dict(data)
     targets_stoich = preprocess_target_stoich(data, elem_dict)
     prec_stoich, _ = preprocess_precursors_stoich(data, elem_dict)
-    
+
     # reduce dataset
     if args.num_elem > 0:
         data = remove_rare_elems(data, prec_stoich, targets_stoich, elem_dict)
@@ -697,21 +687,25 @@ def build_and_save_df():
         print(elem_dict)
         targets_stoich = preprocess_target_stoich(data, elem_dict)
 
-    prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
+    processesd = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
+    prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = processesd
+
     actions, action_dict = preprocess_actions(data)
     dois = [x['doi'] for x in data]
     reactions = [x['reaction_string'] for x in data]
-    features = {'prec_stoich': prec_stoich, 
+    features = {'prec_stoich': prec_stoich,
                 'prec_magpie': prec_magpie,
-                'prec_roost': prec_roost, 
-                'prec_roost_am': prec_roost_am, 
-                'actions': actions, 
+                'prec_roost': prec_roost,
+                'prec_roost_am': prec_roost_am,
+                'actions': actions,
                 'target': targets_stoich}
+
     features = {k: v.tolist() if type(v) == np.ndarray else v for (k, v) in features.items()}
 
     # save data
     df = pd.DataFrame({'dois': dois, 'reaction': reactions, **features})
     print(df)
+
     save_dataset(df, args.clean_set)
     save_dict(elem_dict, args.elem_dict)
     save_dict(magpie_embed, args.magpie_embed)
@@ -739,9 +733,9 @@ def build_and_save_data():
         sources, embeddings = preprocess_precursors_roost(data, elem_dict, args.amounts)
     else:
         print("Only df, stoich, magpie or roost precursor preprocessing allowed")
-    
+
     targets = preprocess_target_stoich(data, elem_dict)
-    
+
     # check shapes
     print('Shape of sources ', np.shape(sources))
     print('Shape of targets ', np.shape(targets))
@@ -758,6 +752,7 @@ def build_and_save_data():
     clean_dataset = [sources, targets]
     save_dataset(clean_dataset, args.clean_set)
     save_dataset(elem_dict, args.elem_dict)
+
     if args.prec_preprocess == 'roost':
         with open(f'{args.magpie_embed}{args.ps}.json', 'w') as json_file:
             json.dump(embeddings, json_file)
