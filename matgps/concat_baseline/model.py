@@ -1,21 +1,28 @@
+import numpy as np
+
+from tqdm.autonotebook import trange
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-from ..segments import SimpleNetwork, ResidualNetwork
+
+from matgps.utils import AverageMeter
+from matgps.segments import ResidualNetwork
 
 
-class NoGraphNet(nn.Module):
+class ConcatNet(nn.Module):
     """
     Simple Residal network with stoich/magpie inputs, output predicted elements in target
     """
-    def __init__(self, max_prec,
-                    embedding_dim,
-                    intermediate_dim,
-                    target_dim,
-                    mask):
+    def __init__(
+        self,
+        max_prec,
+        embedding_dim,
+        intermediate_dim,
+        target_dim,
+        mask
+    ):
         """
-        Initialize NoGraphNet.
+        Initialize ConcatNet.
 
         Inputs
         ----------
@@ -30,15 +37,14 @@ class NoGraphNet(nn.Module):
         mask: bool
             Whether to mask with precursor elements
         """
-        super(NoGraphNet, self).__init__()
+        super(ConcatNet, self).__init__()
 
         self.mask = mask
         # define an output neural network for element prediction
-        #out_hidden = [1024, 512, 256, 256, 128]
-        #out_hidden = [intermediate_dim*4, intermediate_dim*2, intermediate_dim*2, intermediate_dim, intermediate_dim]
+        # out_hidden = [1024, 512, 256, 256, 128]
+        # out_hidden = [intermediate_dim*4, intermediate_dim*2, intermediate_dim*2, intermediate_dim, intermediate_dim]
         out_hidden = [intermediate_dim, intermediate_dim*2, intermediate_dim*2, intermediate_dim]
         self.output_nn = ResidualNetwork(max_prec*embedding_dim, target_dim, out_hidden)
-
 
     def forward(self, precs, prec_elem_mask):
         """
@@ -74,48 +80,91 @@ class NoGraphNet(nn.Module):
         # output AND the reaction representation (in this case this is the input)
         return output, precs
 
-
-class SecondNet(nn.Module):
-    """Net for transer with added trainable layers to learn stoichiometry
-    """
-
-    def __init__(self, pretrained_model, threshold):
+    def evaluate(self, generator, criterion, optimizer, device, threshold, task="train", verbose=False):
         """
-        Input:
-        pretrained_model:
-            CompositionNet pretrained model which outputs logits for elemental presence
-        threshold: float
-            hyperparameter for probabilistic threshold for choosing which elements present
+        evaluate the model
         """
-        super(SecondNet, self).__init__()
-        self.pretrained_model = pretrained_model    # load in this model for transfer
 
-        # threshold:
-        threshold = np.log(threshold/(1-threshold)) # convert to logit threshold
-        self.threshold = nn.Threshold(threshold, 0)
+        if task == "test":
+            self.eval()
+            test_targets = []
+            test_pred = []
+            test_prec_embed = []
+            test_ids = []
+            test_total = 0
+            subset_accuracy = 0
+        else:
+            loss_meter = AverageMeter()
+            if task == "val":
+                self.eval()
+            elif task == "train":
+                self.train()
+            else:
+                raise NameError("Only train, val or test is allowed as task")
 
-        out_hidden = [256, 256, 128]
-        # input dimension is elem_fea_len (i.e. what it was before training for elements) + target_dim
-        # output dimension is target_dim
-        self.last_nn = SimpleNetwork(pretrained_model.output_nn.fcs[0].in_features + pretrained_model.output_nn.fc_out.out_features,
-                                    pretrained_model.output_nn.fc_out.out_features,
-                                    out_hidden)
+        with trange(len(generator), disable=(not verbose)) as t:
+            for input_, target, batch_ids in generator:
+
+                # move tensors to GPU
+                input_ = (tensor.to(device) for tensor in input_)
+                target = target.to(device)
+                # print(target)
+
+                # compute output
+                output, prec_embed = self(*input_)
+                # print("output", output)
+
+                if task == "test":
+
+                    # collect the model outputs
+                    test_ids += batch_ids
+                    test_targets += target.tolist()
+                    test_pred += output.tolist()
+                    test_prec_embed += prec_embed.tolist()
+                    # add threshold and get element prediction
+                    logit_threshold = torch.tensor(threshold/ (1 - threshold)).log()
+                    test_elems = output > logit_threshold   # bool 2d array
+                    target_elems = target != 0              # bool array
+                    # print(np.shape(test_elems))
+                    # print(np.shape(target_elems))
+
+                    # metrics:
+                    # fully correct - subset accuracy
+                    correct_row = [torch.all(test_elems[x].eq(target_elems[x])) for x in range(len(test_elems))]
+                    # print(np.shape(correct_row))
+                    subset_accuracy += np.count_nonzero(correct_row)   # number of perfect matches in batch
+                    # print(subset_accuracy)
+                    test_total += target.size(0)
+                else:
+                    # get predictions and error
+
+                    # make targets into labels for classification
+                    target_labels = torch.where(target != 0, torch.ones_like(target), target)
+                    loss = criterion(output, target_labels)
+                    loss_meter.update(loss.data.cpu().item(), target.size(0))
+
+                    if task == "train":
+                        # compute gradient and do SGD step
+                        optimizer.zero_grad()
+                        loss.backward()
+                        # plot_grad_flow(self.named_parameters())
+                        optimizer.step()
+
+                t.update()
+
+        if task == "test":
+            return (
+                test_ids,
+                test_pred,
+                test_prec_embed,
+                test_targets,
+                subset_accuracy,
+                test_total
+            )
+        else:
+            return loss_meter.avg
 
 
-    def forward(self, elem_weights, orig_elem_fea, self_fea_idx,
-                nbr_fea_idx, crystal_elem_idx):
-
-        output, crys_fea = self.pretrained_model(elem_weights, orig_elem_fea, self_fea_idx,
-                nbr_fea_idx, crystal_elem_idx)
-        # threshold
-        output = self.threshold(output)
-
-        #concatenate with precursor mixture embedding
-        output_with_context = torch.cat([output, crys_fea], dim=1)
-
-        stoich = self.last_nn(output_with_context)
-
-        return F.relu(stoich), output
 
 
 

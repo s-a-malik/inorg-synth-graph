@@ -1,6 +1,12 @@
+import numpy as np
+
+from tqdm.autonotebook import trange
+
 import torch
 import torch.nn as nn
-from ..segments import WeightedAttention, SimpleNetwork, ResidualNetwork
+
+from matgps.utils import AverageMeter
+from matgps.segments import WeightedAttention, SimpleNetwork, ResidualNetwork
 
 
 class ReactionNet(nn.Module):
@@ -16,13 +22,16 @@ class ReactionNet(nn.Module):
 
     Uses pretrained rnn for action sequence encoding
     """
-    def __init__(self, pretrained_rnn,
-                    orig_prec_fea_len,
-                    prec_fea_len,
-                    n_graph,
-                    intermediate_dim,
-                    target_dim,
-                    mask):
+    def __init__(
+        self,
+        pretrained_rnn,
+        orig_prec_fea_len,
+        prec_fea_len,
+        n_graph,
+        intermediate_dim,
+        target_dim,
+        mask
+    ):
         """
         Initialize ReactionNet.
 
@@ -70,8 +79,8 @@ class ReactionNet(nn.Module):
             ) for _ in range(react_heads)])
 
         # define an output neural network for element prediction
-        #out_hidden = [1024, 512, 256, 256, 128]
-        #out_hidden = [intermediate_dim*4, intermediate_dim*2, intermediate_dim*2, intermediate_dim, intermediate_dim]
+        # out_hidden = [1024, 512, 256, 256, 128]
+        # out_hidden = [intermediate_dim*4, intermediate_dim*2, intermediate_dim*2, intermediate_dim, intermediate_dim]
         out_hidden = [intermediate_dim, intermediate_dim*2, intermediate_dim*2, intermediate_dim]
         self.output_nn = ResidualNetwork(prec_fea_len, target_dim, out_hidden)
         # self.output_nn = SimpleNetwork(elem_fea_len, target_dim, out_hidden)
@@ -127,7 +136,6 @@ class ReactionNet(nn.Module):
             prec_fea = graph_func(prec_weights, prec_fea,
                                   self_fea_idx, nbr_fea_idx, reaction_prec_idx, actions)
 
-
         # generate reaction features by pooling the precursor features
         head_fea = []
         for attnhead in self.cry_pool:
@@ -150,8 +158,89 @@ class ReactionNet(nn.Module):
         # output AND the reaction representation
         return output, react_fea
 
-    """def __repr__(self):
-        return '{}'.format(self.__class__.__name__)"""
+    def __repr__(self):
+        return '{}'.format(self.__class__.__name__)
+
+    def evaluate(self, generator, criterion, optimizer, device, threshold, task="train", verbose=False):
+        """
+        evaluate the model
+        """
+
+        if task == "test":
+            self.eval()
+            test_targets = []
+            test_pred = []
+            test_react_embed = []
+            test_ids = []
+            test_comp = []
+            test_total = 0
+            subset_accuracy = 0
+        else:
+            loss_meter = AverageMeter()
+            if task == "val":
+                self.eval()
+            elif task == "train":
+                self.train()
+            else:
+                raise NameError("Only train, val or test is allowed as task")
+
+        with trange(len(generator), disable=(not verbose)) as t:
+            for input_, target, batch_comp, batch_ids in generator:
+
+                # move tensors to GPU
+                input_ = (tensor.to(device) for tensor in input_)
+                target = target.to(device)
+                #print(target)
+
+                # compute output
+                output, react_embed = self(*input_)
+
+                if task == "test":
+
+                    # collect the model outputs
+                    test_ids += batch_ids
+                    test_comp += batch_comp
+                    test_targets += target.tolist()
+                    test_pred += output.tolist()
+                    test_react_embed += react_embed.tolist()
+                    # add threshold and get element prediction
+                    logit_threshold = torch.tensor(threshold/ (1 - threshold)).log()
+                    test_elems = output > logit_threshold   # bool 2d array
+                    target_elems = target != 0                # bool array
+
+                    # metrics:
+                    # fully correct - subset accuracy
+                    correct_row = [torch.all(test_elems[x].eq(target_elems[x])) for x in range(len(test_elems))]
+                    subset_accuracy += np.count_nonzero(correct_row)   # number of perfect matches in batch
+                    test_total += target.size(0)
+                else:
+                    # get predictions and error
+                    # make targets into labels for classification
+                    target_labels = torch.where(target != 0, torch.ones_like(target), target)
+                    loss = criterion(output, target_labels)
+                    loss_meter.update(loss.data.cpu().item(), target.size(0))
+
+                    if task == "train":
+                        # compute gradient and do SGD step
+                        optimizer.zero_grad()
+                        loss.backward()
+                        # plot_grad_flow(self.named_parameters())
+                        optimizer.step()
+
+                t.update()
+
+        if task == "test":
+            return (
+                test_ids,
+                test_comp,
+                test_pred,
+                test_react_embed,
+                test_targets,
+                subset_accuracy,
+                test_total
+            )
+        else:
+            return loss_meter.avg
 
 
 class MessageLayer(nn.Module):
@@ -234,8 +323,6 @@ class MessageLayer(nn.Module):
 
     def __repr__(self):
         return '{}'.format(self.__class__.__name__)
-
-
 
 
 if __name__ == "__main__":
