@@ -144,25 +144,6 @@ def plot_grad_flow(named_parameters):
     plt.savefig('test.png')
 
 
-
-
-
-def cyclical_lr(period=100, cycle_mul=0.2, tune_mul=0.05):
-    # Scaler: we can adapt this if we do not want the triangular CLR
-    scaler = lambda x: 1.
-
-    # Lambda function to calculate the LR
-    lr_lambda = lambda it: cycle_mul + (1. - cycle_mul) * relative(it, period)
-
-    # Additional function to see where on the cycle we are
-    def relative(it, stepsize):
-        cycle = math.floor(1 + it / (period))
-        x = abs(2*(it / period - cycle) + 1)
-        return max(0, (1 - x)) * scaler(cycle)
-
-    return lr_lambda
-
-
 class LRFinder(object):
     """Learning rate range test.
 
