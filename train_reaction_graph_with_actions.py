@@ -45,7 +45,7 @@ def get_class_weights(generator):
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
     # print(max_num_elements_tensor)
     weights = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
-    print(weights)
+    # print(weights)
 
     return weights.to(args.device)
 
@@ -60,7 +60,7 @@ def custom_loss(output, target_labels):
     max_num_elements = torch.max(num_elements)
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
     pos_weight = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
-    #print(pos_weight)
+    # print(pos_weight)
 
     # BCE loss for composition - treating as a multilabel classification problem
     comp_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)(output, target_labels)
@@ -96,7 +96,7 @@ def init_optim(model, weights=None):
     if args.loss == "BCE":
         criterion = nn.BCEWithLogitsLoss()
     elif args.loss == "BCEweighted":
-        if weights == None:
+        if weights is None:
             criterion = nn.BCEWithLogitsLoss()
         else:
             criterion = nn.BCEWithLogitsLoss(pos_weight=weights)

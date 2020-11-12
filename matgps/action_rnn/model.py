@@ -5,6 +5,7 @@ and its training routines: preprocessing sequences, training, saving
 
 import random
 
+from typing import Tuple
 from tqdm.autonotebook import trange
 
 import torch
@@ -13,7 +14,6 @@ import torch.nn.functional as F
 import torch.nn.utils.rnn as rnn_utils
 
 from matgps.utils import AverageMeter
-from typing import Tuple
 
 
 class LSTM(nn.Module):

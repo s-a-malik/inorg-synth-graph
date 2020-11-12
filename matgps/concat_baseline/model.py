@@ -78,6 +78,7 @@ class ConcatNet(nn.Module):
             output = torch.where(prec_elem_mask != 0, output, zero_prob)
 
         # output AND the reaction representation (in this case this is the input)
+        # NOTE using just the concatenated magpie representations could be improved upon.
         return output, precs
 
     def evaluate(self, generator, criterion, optimizer, device, threshold, task="train", verbose=False):
