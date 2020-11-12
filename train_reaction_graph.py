@@ -1,11 +1,11 @@
 import os
 import gc
+import sys
 import datetime
+import argparse
 import pickle as pkl
 
 import numpy as np
-import pandas as pd
-from tqdm.autonotebook import tqdm
 
 import torch
 import torch.nn as nn
@@ -16,11 +16,10 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split as split
 from sklearn.metrics import r2_score, hamming_loss, accuracy_score, f1_score
 
-from reaction_graph.model import ReactionNet
-from reaction_graph.data import input_parser, ReactionData, collate_batch
-from reaction_graph.utils import evaluate, save_checkpoint, \
-                        load_previous_state, cyclical_lr, \
-                        LRFinder
+from matgps.reaction_graph.model import ReactionNet
+from matgps.reaction_graph.data import ReactionData, collate_batch
+from matgps.utils import save_checkpoint, load_previous_state
+
 
 def get_class_weights(generator):
     """Get class weights for imbalanced dataset by iterating through generator once
@@ -28,19 +27,20 @@ def get_class_weights(generator):
     all_targets = []
     for _, target, _, _ in generator:
         all_targets += target.tolist()
-    #print(all_targets[:5])
+    # print(all_targets[:5])
     all_targets = torch.Tensor(all_targets)
-    #print(all_targets.shape)
+    # print(all_targets.shape)
     # get weights of elements in batch
     num_elements = float(len(all_targets)) - (all_targets == 0).sum(dim=0)
-    #print(num_elements)
+    # print(num_elements)
     max_num_elements = torch.max(num_elements)
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
-    #print(max_num_elements_tensor)
+    # print(max_num_elements_tensor)
     weights = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
     print(weights)
 
     return weights.to(args.device)
+
 
 def custom_loss(output, target_labels):
     """loss function with batchwise weighting and regularisation
@@ -52,7 +52,7 @@ def custom_loss(output, target_labels):
     max_num_elements = torch.max(num_elements)
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
     pos_weight = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
-    #print(pos_weight)
+    # print(pos_weight)
 
     # BCE loss for composition - treating as a multilabel classification problem
     comp_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)(output, target_labels)
@@ -62,19 +62,23 @@ def custom_loss(output, target_labels):
 
     return comp_loss + (args.reg_weight*reg_loss)
 
+
 def init_model(orig_prec_fea_len):
 
-    model = ReactionNet(orig_prec_fea_len=orig_prec_fea_len,
-                            prec_fea_len=args.prec_fea_len,
-                            n_graph=args.n_graph,
-                            intermediate_dim=args.intermediate_dim,
-                            target_dim=args.target_dim,
-                            mask=args.mask)
+    model = ReactionNet(
+        orig_prec_fea_len=orig_prec_fea_len,
+        prec_fea_len=args.prec_fea_len,
+        n_graph=args.n_graph,
+        intermediate_dim=args.intermediate_dim,
+        target_dim=args.target_dim,
+        mask=args.mask
+    )
 
     model.to(args.device)
     print(model)
 
     return model
+
 
 def init_optim(model, weights=None):
 
@@ -110,10 +114,12 @@ def init_optim(model, weights=None):
         raise NameError("Only SGD or Adam is allowed as --optim")
 
     if args.clr:
-        clr = cyclical_lr(period=args.clr_period,
-                          cycle_mul=0.1,
-                          tune_mul=0.05,)
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, [clr])
+        scheduler = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=args.learning_rate/10,
+            max_lr=args.learning_rate,
+            step_size_up=50,
+            cycle_momentum=False)
     else:
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [])
 
@@ -122,11 +128,13 @@ def init_optim(model, weights=None):
 
 def main():
 
-    dataset = ReactionData(data_path=args.data_path,
-                              fea_path=args.fea_path,
-                              elem_dict_path=args.elem_path,
-                              prec_type=args.prec_type,
-                              amounts=args.amounts)
+    dataset = ReactionData(
+        data_path=args.data_path,
+        fea_path=args.fea_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        amounts=args.amounts
+    )
 
     orig_prec_fea_len = dataset.prec_fea_dim
     print(orig_prec_fea_len)
@@ -144,7 +152,7 @@ def main():
     test_set = torch.utils.data.Subset(dataset, test_idx)
 
     # Ensure directory structure present
-    os.makedirs(f"models/", exist_ok=True)
+    os.makedirs("models/", exist_ok=True)
     os.makedirs("runs/", exist_ok=True)
     os.makedirs("results/", exist_ok=True)
 
@@ -186,26 +194,6 @@ def ensemble(fold_id, dataset, test_set,
     weights = get_class_weights(train_generator)
 
     if not args.evaluate:
-        if args.lr_search:
-            model = init_model(fea_len)
-            criterion, optimizer, scheduler = init_optim(model, weights=weights)
-
-            if args.fine_tune:
-                print("Fine tune from a network trained on a different dataset")
-                previous_state = load_previous_state(args.fine_tune,
-                                                     model,
-                                                     args.device)
-                model, _, _, _, _ = previous_state
-                model.to(args.device)
-                criterion, optimizer, scheduler = init_optim(model, weights=weights)
-
-            lr_finder = LRFinder(model, optimizer, criterion,
-                                 metric="mse", device=args.device)
-            lr_finder.range_test(train_generator, end_lr=1,
-                                 num_iter=100, step_mode="exp")
-            lr_finder.plot()
-            return
-
         for run_id in range(ensemble_folds):
 
             # this allows us to run ensembles in parallel rather than in series
@@ -229,8 +217,6 @@ def ensemble(fold_id, dataset, test_set,
                        model, optimizer, criterion, scheduler, writer)
 
     test_ensemble(fold_id, ensemble_folds, test_set, fea_len)
-
-
 
 
 def experiment(fold_id, run_id, args,
@@ -286,14 +272,14 @@ def experiment(fold_id, run_id, args,
             model.to(args.device)
             criterion, optimizer, scheduler = init_optim(model)
 
-
-        best_loss = evaluate(generator=val_generator,
-                                  model=model,
-                                  criterion=criterion,
-                                  optimizer=None,
-                                  device=args.device,
-                                  threshold=args.threshold,
-                                  task="val")
+        best_loss = model.evaluate(
+            generator=val_generator,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="val"
+        )
         start_epoch = 0
 
     # try except structure used to allow keyboard interupts to stop training
@@ -301,25 +287,27 @@ def experiment(fold_id, run_id, args,
     try:
         for epoch in range(start_epoch, start_epoch+args.epochs):
             # Training
-            t_loss = evaluate(generator=train_generator,
-                                             model=model,
-                                             criterion=criterion,
-                                             optimizer=optimizer,
-                                             device=args.device,
-                                             threshold=args.threshold,
-                                             task="train",
-                                             verbose=True)
+            t_loss = model.evaluate(
+                generator=train_generator,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=args.device,
+                threshold=args.threshold,
+                task="train",
+                verbose=True
+            )
 
             # Validation
             with torch.no_grad():
                 # evaluate on validation set
-                val_loss = evaluate(generator=val_generator,
-                                                       model=model,
-                                                       criterion=criterion,
-                                                       optimizer=None,
-                                                       device=args.device,
-                                                       threshold=args.threshold,
-                                                       task="val")
+                val_loss = model.evaluate(
+                    generator=val_generator,
+                    criterion=criterion,
+                    optimizer=None,
+                    device=args.device,
+                    threshold=args.threshold,
+                    task="val"
+                )
 
             # if epoch % args.print_freq == 0:
             print("Epoch: [{}/{}]\n"
@@ -400,9 +388,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
         model.load_state_dict(checkpoint["state_dict"])
 
         model.eval()
-        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = evaluate(
+        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = model.evaluate(
             generator=test_generator,
-            model=model,
             criterion=criterion,
             optimizer=None,
             device=args.device,
@@ -463,6 +450,228 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
                                                    args.sample), 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
+
+
+def input_parser():
+    """
+    parse input
+    """
+    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor,"
+                                                "reaction graph model")
+
+    # dataset inputs
+    parser.add_argument("--data-path",
+                        type=str,
+                        default="data/datasets/dataset_prec3_df_all_2104.pkl",
+                        metavar="PATH",
+                        help="dataset path")
+
+    parser.add_argument("--fea-path",
+                        type=str,
+                        default="data/embeddings/magpie_embed_prec3_df_all_2104.json",
+                        metavar="PATH",
+                        help="Precursor feature path")
+
+    parser.add_argument('--elem-path',
+	                    type=str,
+                        nargs='?',
+                        default='data/datasets/elem_dict_prec3_df_all_2104.json',
+	                    help="Path to element dictionary")
+
+    parser.add_argument('--prec-type',
+	                    type=str,
+                        nargs='?',
+                        default='stoich',
+	                    help="Type of input, stoich or magpie")
+
+    parser.add_argument('--intermediate-dim',
+                        type=int,
+                        nargs='?',
+                        default=128,
+                        help='Intermediate model dimension')
+
+    parser.add_argument('--target-dim',
+                        type=int,
+                        nargs='?',
+                        default=81,
+                        help='Target vector dimension')
+
+    parser.add_argument('--mask',
+                        action="store_true",
+                        default=False,
+                        help="Whether to mask output with precursor elements or not")
+
+    parser.add_argument("--disable-cuda",
+                        action="store_true",
+                        help="Disable CUDA")
+
+    # restart inputs
+    parser.add_argument("--evaluate",
+                        action="store_true",
+                        help="skip network training stages checkpoint")
+
+    # dataloader inputs
+    parser.add_argument("--workers",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="number of data loading workers (default: 0)")
+
+    parser.add_argument("--batch-size", "--bsize",
+                        default=128,
+                        type=int,
+                        metavar="N",
+                        help="mini-batch size (default: 128)")
+
+    parser.add_argument("--val-size",
+                        default=0.0,
+                        type=float,
+                        metavar="N",
+                        help="proportion of data used for validation")
+
+    parser.add_argument("--test-size",
+                        default=0.2,
+                        type=float,
+                        metavar="N",
+                        help="proportion of data for testing")
+
+    parser.add_argument("--seed",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="seed for random number generator")
+
+    parser.add_argument("--sample",
+                        default=1,
+                        type=int,
+                        metavar="N",
+                        help="sub-sample the training set for learning curves")
+
+    parser.add_argument('--amounts',
+                        action="store_true",
+                        default=False,
+                        help="use precursor amounts as weights")
+
+    # optimiser inputs
+    parser.add_argument("--epochs",
+                        default=300,
+                        type=int,
+                        metavar="N",
+                        help="number of total epochs to run")
+
+    parser.add_argument("--loss",
+                        default="BCE",
+                        type=str,
+                        metavar="str",
+                        help="choose a Loss Function")
+
+    parser.add_argument("--threshold",
+                        default=0.9,
+                        type=float,
+                        metavar='prob',
+                        help="Threshold for element presence in product (probability)")
+
+    parser.add_argument("--reg-weight",
+                        default=0,
+                        type=float,
+                        metavar="float",
+                        help="Weight for regularisation loss")
+
+    parser.add_argument("--optim",
+                        default="Adam",
+                        type=str,
+                        metavar="str",
+                        help="choose an optimizer; SGD, Adam or AdamW")
+
+    parser.add_argument("--learning-rate", "--lr",
+                        default=5e-4,
+                        type=float,
+                        metavar="float",
+                        help="initial learning rate (default: 3e-4)")
+
+    parser.add_argument("--momentum",
+                        default=0.9,
+                        type=float,
+                        metavar="float [0,1]",
+                        help="momentum (default: 0.9)")
+
+    parser.add_argument("--weight-decay",
+                        default=1e-6,
+                        type=float,
+                        metavar="float [0,1]",
+                        help="weight decay (default: 0)")
+
+    # graph inputs
+    parser.add_argument("--prec-fea-len",
+                        default=64,
+                        type=int,
+                        metavar="N",
+                        help="Dimension of node features")
+
+    parser.add_argument("--n-graph",
+                        default=3,
+                        type=int,
+                        metavar="N",
+                        help="number of graph layers")
+
+    # ensemble inputs
+    parser.add_argument("--fold-id",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="identify the fold of the data")
+
+    parser.add_argument("--run-id",
+                        default=0,
+                        type=int,
+                        metavar="N",
+                        help="ensemble model id")
+
+    parser.add_argument("--ensemble",
+                        default=1,
+                        type=int,
+                        metavar="N",
+                        help="number ensemble repeats")
+
+    # transfer learning
+    parser.add_argument("--lr-search",
+                        action="store_true",
+                        help="perform a learning rate search")
+
+    parser.add_argument("--clr",
+                        default=True,
+                        type=bool,
+                        help="use a cyclical learning rate schedule")
+
+    parser.add_argument("--clr-period",
+                        default=100,
+                        type=int,
+                        help="how many learning rate cycles to perform")
+
+    parser.add_argument("--resume",
+                        action="store_true",
+                        help="resume from previous checkpoint")
+
+    parser.add_argument("--transfer",
+                        type=str,
+                        metavar="PATH",
+                        help="checkpoint path for transfer learning")
+
+    parser.add_argument("--fine-tune",
+                        type=str,
+                        metavar="PATH",
+                        help="checkpoint path for fine tuning")
+
+    args = parser.parse_args(sys.argv[1:])
+
+    if args.lr_search:
+        args.learning_rate = 1e-8
+
+    args.device = torch.device("cuda") if (not args.disable_cuda) and  \
+        torch.cuda.is_available() else torch.device("cpu")
+
+    return args
+
 
 if __name__ == "__main__":
     args = input_parser()

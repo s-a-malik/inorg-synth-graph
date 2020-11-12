@@ -5,8 +5,6 @@ import pickle as pkl
 import argparse
 
 import numpy as np
-import pandas as pd
-from tqdm.autonotebook import tqdm
 
 import torch
 import torch.nn as nn
@@ -17,11 +15,10 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split as split
 from sklearn.metrics import r2_score, hamming_loss, accuracy_score, f1_score
 
-from matgps.baseline.model import NoGraphNet
-from matgps.baseline.data import ReactionData
-from matgps.baseline.utils import evaluate, save_checkpoint, \
-                        load_previous_state, cyclical_lr, \
-                        LRFinder
+from matgps.concat_baseline.model import ConcatNet
+from matgps.concat_baseline.data import ReactionData
+
+from matgps.utils import save_checkpoint, load_previous_state
 
 
 def custom_loss(output, target_labels):
@@ -36,7 +33,7 @@ def custom_loss(output, target_labels):
     max_num_elements = torch.max(num_elements)
     max_num_elements_tensor = max_num_elements.repeat(len(num_elements))
     pos_weight = torch.where(num_elements != 0, max_num_elements_tensor / num_elements, num_elements)
-    #print(pos_weight)
+    # print(pos_weight)
 
     # BCE loss for composition - treating as a multilabel classification problem
     comp_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)(output, target_labels)
@@ -46,10 +43,11 @@ def custom_loss(output, target_labels):
 
     return comp_loss + (args.reg_weight*reg_loss)
 
+
 def init_model(max_prec, embedd_dim, intermediate_dim, target_dim, mask, device):
     """Initialise model"""
 
-    model = NoGraphNet(
+    model = ConcatNet(
         max_prec=max_prec,
         embedding_dim=embedd_dim,
         intermediate_dim=intermediate_dim,
@@ -92,10 +90,12 @@ def init_optim(model):
         raise NameError("Only SGD or Adam is allowed as --optim")
 
     if args.clr:
-        clr = cyclical_lr(period=args.clr_period,
-                          cycle_mul=0.1,
-                          tune_mul=0.05,)
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, [clr])
+        scheduler = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=args.learning_rate/10,
+            max_lr=args.learning_rate,
+            step_size_up=50,
+            cycle_momentum=False)
     else:
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [])
 
@@ -104,20 +104,19 @@ def init_optim(model):
 
 def main():
 
-    dataset = ReactionData(data_path=args.data_path,
-                              elem_dict_path=args.elem_path,
-                              prec_type=args.prec_type,
-                              augment=args.augment)
+    dataset = ReactionData(
+        data_path=args.data_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        augment=args.augment
+    )
     embedd_dim = dataset.embedd_dim
     max_prec = dataset.max_prec
 
     # skip to evaluate whole dataset if testing all
     if args.test_size == 1.0:
-
         test_ensemble(args.fold_id, args.ensemble, dataset, max_prec, embedd_dim)
-
         return
-
 
     indices = list(range(len(dataset)))
     train_idx, test_idx = split(indices, random_state=args.seed,
@@ -127,7 +126,7 @@ def main():
     test_set = torch.utils.data.Subset(dataset, test_idx)
 
     # Ensure directory structure present
-    os.makedirs(f"models/", exist_ok=True)
+    os.makedirs("models/", exist_ok=True)
     os.makedirs("runs/", exist_ok=True)
     os.makedirs("results/", exist_ok=True)
 
@@ -243,13 +242,14 @@ def experiment(fold_id, run_id, args,
                 p.requires_grad = False
             criterion, optimizer, scheduler = init_optim(model)
 
-        best_loss, _, _ = evaluate(generator=val_generator,
-                                  model=model,
-                                  criterion=criterion,
-                                  optimizer=None,
-                                  device=args.device,
-                                  threshold=args.threshold,
-                                  task="val")
+        best_loss, _, _ = model.evaluate(
+            generator=val_generator,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="val"
+        )
         start_epoch = 0
 
     # try except structure used to allow keyboard interupts to stop training
@@ -257,9 +257,8 @@ def experiment(fold_id, run_id, args,
     try:
         for epoch in range(start_epoch, start_epoch+args.epochs):
             # Training
-            t_loss = evaluate(
+            t_loss = model.evaluate(
                 generator=train_generator,
-                model=model,
                 criterion=criterion,
                 optimizer=optimizer,
                 device=args.device,
@@ -271,9 +270,8 @@ def experiment(fold_id, run_id, args,
             # Validation
             with torch.no_grad():
                 # evaluate on validation set
-                val_loss = evaluate(
+                val_loss = model.evaluate(
                     generator=val_generator,
-                    model=model,
                     criterion=criterion,
                     optimizer=None,
                     device=args.device,
@@ -346,22 +344,17 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
             j = args.run_id
             print("Evaluating Model")
         else:
-            print("Evaluating Model {}/{}".format(j+1, ensemble_folds))
+            print(f"Evaluating Model {j+1}/{ensemble_folds}")
 
-        #checkpoint = torch.load(f=("models/best_"
+        # checkpoint = torch.load(f=("models/best_"
         checkpoint = torch.load(f=("models/checkpoint_"
-                                   "f-{}_r-{}_s-{}_t-{}"
-                                   ".pth.tar").format(fold_id,
-                                                      j,
-                                                      args.seed,
-                                                      args.sample),
+                                   f"f-{fold_id}_r-{j}_s-{args.seed}_t-{args.sample}.pth.tar"),
                                 map_location=args.device)
         model.load_state_dict(checkpoint["state_dict"])
 
         model.eval()
-        idx, pred, prec_embed, y_test, subset_accuracy, total = evaluate(
+        idx, pred, prec_embed, y_test, subset_accuracy, total = model.evaluate(
             generator=test_generator,
-            model=model,
             criterion=criterion,
             optimizer=None,
             device=args.device,
@@ -369,8 +362,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
             task="test"
         )
 
-        y_ensemble[j,:] = pred
-        y_ensemble_prec_embed[j,:] = prec_embed
+        y_ensemble[j, :] = pred
+        y_ensemble_prec_embed[j, :] = prec_embed
 
     y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
@@ -379,8 +372,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
     print(y_prec_embed[:5])
     print(y_test[:5])
     print("Ensemble Performance Metrics:")
-    print("Elements Accuracy on {} images (in final ensemble!): {}".format(total,
-                                                            subset_accuracy/total))
+    print(f"Elements Accuracy on {total} images (in final ensemble!): {subset_accuracy/total}")
 
     # thresholds for element prediction
     thresholds = np.linspace(0.005, 0.99, 100)
@@ -394,8 +386,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
             pred_elems = y_pred > threshold   # bool 2d array
         else:
             pred_elems = y_pred > logit_threshold
-        #print(np.shape(test_elems))
-        #print(np.shape(pred_elems))
+        # print(np.shape(test_elems))
+        # print(np.shape(pred_elems))
 
         # metrics:
         subset_acc_dict[threshold] = accuracy_score(test_elems, pred_elems)
@@ -403,7 +395,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
         hamming_dict[threshold] = hamming_loss(test_elems, pred_elems)
 
     max_acc = max(subset_acc_dict.values())
-    best_subset_acc = [{k:v} for k, v in subset_acc_dict.items() if v == max_acc]
+    best_subset_acc = [{k: v} for k, v in subset_acc_dict.items() if v == max_acc]
     best_thresh = list(best_subset_acc[0].keys())[0]
     #print(best_thresh)
     best_logit_thresh = np.log(best_thresh / (1 - best_thresh))
@@ -425,12 +417,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
 
     # save results
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open("results/test_results_"
-                                "f-{}_r-{}_s-{}_t-{}"
-                                ".pkl".format(fold_id,
-                                                   args.run_id,
-                                                   args.seed,
-                                                   args.sample), 'wb') as f:
+    with open(f"results/test_results_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 

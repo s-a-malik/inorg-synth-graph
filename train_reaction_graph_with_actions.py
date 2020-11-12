@@ -21,21 +21,10 @@ from sklearn.metrics import (
     f1_score,
 )
 
-from matgps.action_rnn import LSTM
+from matgps.action_rnn.model import LSTM
 from matgps.reaction_graph_actions.model import ReactionNet
-from matgps.reaction_graph_actions.data import (
-    ReactionData,
-    collate_batch,
-)
-from matgps.reaction_graph_actions.utils import (
-    evaluate
-)
-
-from matgps.utils import (
-    save_checkpoint,
-    load_previous_state,
-    LRFinder
-)
+from matgps.reaction_graph_actions.data import ReactionData, collate_batch
+from matgps.utils import save_checkpoint, load_previous_state
 
 
 def get_class_weights(generator):
@@ -204,12 +193,10 @@ def main():
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
-    ensemble(args.fold_id, train_set, test_set,
-             args.ensemble, orig_prec_fea_len, pretrained_rnn)
+    ensemble(args.fold_id, train_set, test_set, args.ensemble, orig_prec_fea_len, pretrained_rnn)
 
 
-def ensemble(fold_id, dataset, test_set,
-             ensemble_folds, fea_len, pretrained_rnn):
+def ensemble(fold_id, dataset, test_set, ensemble_folds, fea_len, pretrained_rnn):
     """
     Train multiple models
     """
@@ -241,26 +228,6 @@ def ensemble(fold_id, dataset, test_set,
     weights = get_class_weights(train_generator)
 
     if not args.evaluate:
-        if args.lr_search:
-            model = init_model(pretrained_rnn, fea_len)
-            criterion, optimizer, scheduler = init_optim(model, weights=weights)
-
-            if args.fine_tune:
-                print("Fine tune from a network trained on a different dataset")
-                previous_state = load_previous_state(args.fine_tune,
-                                                     model,
-                                                     args.device)
-                model, _, _, _, _ = previous_state
-                model.to(args.device)
-                criterion, optimizer, scheduler = init_optim(model, weights=weights)
-
-            lr_finder = LRFinder(model, optimizer, criterion,
-                                 metric="mse", device=args.device)
-            lr_finder.range_test(train_generator, end_lr=1,
-                                 num_iter=100, step_mode="exp")
-            lr_finder.plot()
-            return
-
         for run_id in range(ensemble_folds):
 
             # this allows us to run ensembles in parallel rather than in series
@@ -339,9 +306,8 @@ def experiment(fold_id, run_id, args,
             model.to(args.device)
             criterion, optimizer, scheduler = init_optim(model)
 
-        best_loss = evaluate(
+        best_loss = model.evaluate(
             generator=val_generator,
-            model=model,
             criterion=criterion,
             optimizer=None,
             device=args.device,
@@ -356,9 +322,8 @@ def experiment(fold_id, run_id, args,
     try:
         for epoch in range(start_epoch, start_epoch+args.epochs):
             # Training
-            t_loss = evaluate(
+            t_loss = model.evaluate(
                 generator=train_generator,
-                model=model,
                 criterion=criterion,
                 optimizer=optimizer,
                 device=args.device,
@@ -370,9 +335,8 @@ def experiment(fold_id, run_id, args,
             # Validation
             with torch.no_grad():
                 # evaluate on validation set
-                val_loss = evaluate(
+                val_loss = model.evaluate(
                     generator=val_generator,
-                    model=model,
                     criterion=criterion,
                     optimizer=None,
                     device=args.device,
@@ -458,9 +422,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
         model.load_state_dict(checkpoint["state_dict"])
 
         model.eval()
-        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = evaluate(
+        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = model.evaluate(
             generator=test_generator,
-            model=model,
             criterion=criterion,
             optimizer=None,
             device=args.device,
@@ -469,7 +432,6 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
         )
         y_ensemble[j,:] = pred
         y_ensemble_prec_embed[j,:] = prec_embed
-
 
     y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
@@ -488,8 +450,9 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
         subset_acc_dict[threshold] = accuracy_score(test_elems, pred_elems)
         f1[threshold] = f1_score(test_elems, pred_elems, average='weighted', zero_division=0)
         hamming_dict[threshold] = hamming_loss(test_elems, pred_elems)
+
     max_acc = max(subset_acc_dict.values())
-    best_subset_acc = [{k:v} for k, v in subset_acc_dict.items() if v == max_acc]
+    best_subset_acc = [{k: v} for k, v in subset_acc_dict.items() if v == max_acc]
     best_thresh = list(best_subset_acc[0].keys())[0]
     # print(best_thresh)
     best_logit_thresh = np.log(best_thresh / (1 - best_thresh))
@@ -499,9 +462,9 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
 
     print(f"Best Subset 0/1 score: {max_acc} +/- {ensemble_error} at {best_thresh}")
     print("Ensemble accuracies:", ensemble_accs)
-    print("Subset 0/1 scores:", subset_acc_dict)
-    print("Hamming Loss:", hamming_dict)
-    print("F1 Score (weighted):", f1)
+    # print("Subset 0/1 scores:", subset_acc_dict)
+    # print("Hamming Loss:", hamming_dict)
+    # print("F1 Score (weighted):", f1)
 
     print("y_pred", np.shape(y_pred))
     print("y_prec_embed", np.shape(y_prec_embed))
