@@ -54,21 +54,22 @@ class ReactionData(Dataset):
 
         targets = np.array(df['target'].tolist())
 
-        # augment data with rearrangements
-        augmented_precs_stoich = []
-        augmented_precs_magpie = []
-        augmented_targets = []
-        for i in range(len(precs_stoich)):
-            perms_stoich = list(permutations(precs_stoich[i]))
-            perms_magpie = list(permutations(precs_magpie[i]))
-            for perm in range(len(perms_stoich)):
-                augmented_precs_stoich.append(perms_stoich[perm])
-                augmented_precs_magpie.append(perms_magpie[perm])
-                augmented_targets.append(targets[i])
+        if self.augment:
+            # augment data with rearrangements
+            augmented_precs_stoich = []
+            augmented_precs_magpie = []
+            augmented_targets = []
+            for i in range(len(precs_stoich)):
+                perms_stoich = list(permutations(precs_stoich[i]))
+                perms_magpie = list(permutations(precs_magpie[i]))
+                for perm in range(len(perms_stoich)):
+                    augmented_precs_stoich.append(perms_stoich[perm])
+                    augmented_precs_magpie.append(perms_magpie[perm])
+                    augmented_targets.append(targets[i])
 
-        self.precs_stoich = np.array(augmented_precs_stoich)
-        self.precs_magpie = np.array(augmented_precs_magpie)
-        self.targets = np.array(augmented_targets)
+            self.precs_stoich = np.array(augmented_precs_stoich)
+            self.precs_magpie = np.array(augmented_precs_magpie)
+            self.targets = np.array(augmented_targets)
 
         # elem_dict
         with open(elem_dict_path, 'r') as json_file:
@@ -119,23 +120,6 @@ class ReactionData(Dataset):
 
         return (precs, prec_elems), \
             target, idx
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
 
 
 if __name__ == "__main__":
