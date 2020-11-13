@@ -26,62 +26,27 @@ from matgps.action_rnn.data import (
 )
 
 
-def custom_rnn_loss(output, target):
-    """Cross Entropy loss function with weights from batch
-    Weighting: (Max no. of occurences of any class)/(No. of occurances of class)
-    target: tensor (total no. of actions in batch) with integer class labels
-    """
-    # find number of occurances of each type
-    num_actions = []
-    for i in range(output.shape[1]):
-        num_actions.append((target == i).unsqueeze(0))
-    num_actions = torch.cat(num_actions, dim=0).sum(dim=1)
-    # print(num_actions)
-    # print(target)
-
-    # find max number of actions
-    max_num_actions = torch.max(num_actions).repeat(len(num_actions))
-    # weights
-    weight = torch.where(num_actions != 0, max_num_actions / num_actions, num_actions).float()
-
-    weighted_loss = nn.CrossEntropyLoss(ignore_index=0, weight=weight)(output, target)
-    # weighted_loss = nn.CrossEntropyLoss(ignore_index=0)(output, target)
-
-    return weighted_loss
-
-
 def main():
     """
     Train the action sequence encoder.
     """
     # gets raw action sequences (OHE embedded already)
-    dataset = ActionData(args.data_path, args.action_path)
-    tokens = "\n\t".join(f"{val} - {key}" for (key, val) in dataset.action_dict.items())
+    train_set = ActionData(args.train_path, args.action_path)
+    tokens = "\n\t".join(f"{val} - {key}" for (key, val) in train_set.action_dict.items())
+    input_dim = train_set.action_fea_dim
     print(f"Model Tokens:\n\t{tokens}")
 
     # get train/val/test generators - these form the padded sequences
-    indices = list(range(len(dataset)))
-    train_idx, test_idx = split(indices, random_state=args.seed,
-                                test_size=args.test_size)
-    train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
-    test_set = torch.utils.data.Subset(dataset, test_idx)
-    print("Shape of train, test set: ", train_set.__len__(), test_set.__len__())
+    train_idx = list(range(len(train_set)))
+    train_set = torch.utils.data.Subset(train_set, train_idx[0::args.sample])
 
-    if args.val_size == 0.0:
-        print("No validation set used, using test set for evaluation purposes")
-        # Note that when using this option care must be taken not to
-        # peak at the test-set. The only valid model to use is the one obtained
-        # after the final epoch where the epoch count is decided in advance of
-        # the experiment.
-        train_subset = dataset
-        val_subset = test_set
+    test_set = ActionData(args.test_path, args.action_path)
+
+    if args.val_path:
+        val_set = ActionData(args.val_path, args.action_path)
     else:
-        indices = list(range(len(train_set)))
-        train_idx, val_idx = split(indices, random_state=args.seed,
-                                   test_size=args.val_size/(1-args.test_size))
-        train_subset = torch.utils.data.Subset(train_set, train_idx)
-        val_subset = torch.utils.data.Subset(train_set, val_idx)
-        print("Shape of train, val subset: ", train_subset.__len__(), val_subset.__len__())
+        print("No validation set gvien, using test set for evaluation purposes")
+        val_set = test_set
 
     params = {
         "batch_size": args.batch_size,
@@ -91,12 +56,12 @@ def main():
         "collate_fn": collate_batch
     }
 
-    train_generator = DataLoader(train_subset, **params)
-    val_generator = DataLoader(val_subset, **params)
+    train_generator = DataLoader(train_set, **params)
+    val_generator = DataLoader(val_set, **params)
 
     # initialise model and optimization
     model = LSTM(
-        input_dim=dataset.action_fea_dim,
+        input_dim=input_dim,
         latent_dim=args.latent_dim,
         device=args.device,
         num_layers=args.num_layers,
@@ -224,7 +189,7 @@ def main():
               "shuffle": False,
               "collate_fn": collate_batch}
 
-    test_generator = DataLoader(dataset, **params)
+    test_generator = DataLoader(test_set, **params)
 
     test_pred, test_lens, test_encoded, test_targets, test_total = model.evaluate(
         generator=test_generator,
@@ -265,6 +230,30 @@ def main():
     print('total accuracy', accuracy)
 
 
+def custom_rnn_loss(output, target):
+    """Cross Entropy loss function with weights from batch
+    Weighting: (Max no. of occurences of any class)/(No. of occurances of class)
+    target: tensor (total no. of actions in batch) with integer class labels
+    """
+    # find number of occurances of each type
+    num_actions = []
+    for i in range(output.shape[1]):
+        num_actions.append((target == i).unsqueeze(0))
+    num_actions = torch.cat(num_actions, dim=0).sum(dim=1)
+    # print(num_actions)
+    # print(target)
+
+    # find max number of actions
+    max_num_actions = torch.max(num_actions).repeat(len(num_actions))
+    # weights
+    weight = torch.where(num_actions != 0, max_num_actions / num_actions, num_actions).float()
+
+    weighted_loss = nn.CrossEntropyLoss(ignore_index=0, weight=weight)(output, target)
+    # weighted_loss = nn.CrossEntropyLoss(ignore_index=0)(output, target)
+
+    return weighted_loss
+
+
 def input_parser():
     """
     parse input
@@ -272,15 +261,27 @@ def input_parser():
     parser = argparse.ArgumentParser(description="Action RNN Autoencoder Training")
 
     # dataset inputs
-    parser.add_argument("--data-path",
+    parser.add_argument("--train-path",
                         type=str,
-                        default="data/datasets/dataset_10_precs.pkl",
+                        default="data/train_10_precs.pkl",
                         metavar="PATH",
-                        help="dataset path")
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--test-path",
+                        type=str,
+                        default="data/test_10_precs.pkl",
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--val-path",
+                        type=str,
+                        default=None,
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
 
     parser.add_argument("--action-path",
                         type=str,
-                        default="data/datasets/action_dict_10_precs.json",
+                        default="data/action_dict_10_precs.json",
                         metavar="PATH",
                         help="action dict path")
 
@@ -351,8 +352,8 @@ def input_parser():
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        # default=10,
-                        default=100,
+                        default=10,
+                        # default=100,
                         type=int,
                         metavar="N",
                         help="number of total epochs to run")
@@ -390,10 +391,6 @@ def input_parser():
     parser.add_argument('--teacher-forcing',
                         action="store_true",
                         help='If using the teacher frocing in decoder')
-
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
 
     parser.add_argument("--disable-cuda",
                         action="store_true",

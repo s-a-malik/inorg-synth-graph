@@ -104,26 +104,36 @@ def init_optim(model):
 
 def main():
 
-    dataset = ReactionData(
-        data_path=args.data_path,
+    train_set = ReactionData(
+        data_path=args.train_path,
         elem_dict_path=args.elem_path,
         prec_type=args.prec_type,
         augment=args.augment
     )
-    embedd_dim = dataset.embedd_dim
-    max_prec = dataset.max_prec
 
-    # skip to evaluate whole dataset if testing all
-    if args.test_size == 1.0:
-        test_ensemble(args.fold_id, args.ensemble, dataset, max_prec, embedd_dim)
-        return
+    embedd_dim = train_set.embedd_dim
+    max_prec = train_set.max_prec
 
-    indices = list(range(len(dataset)))
-    train_idx, test_idx = split(indices, random_state=args.seed,
-                                test_size=args.test_size)
+    train_idx = list(range(len(train_set)))
+    train_set = torch.utils.data.Subset(train_set, train_idx[0::args.sample])
 
-    train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
-    test_set = torch.utils.data.Subset(dataset, test_idx)
+    test_set = ReactionData(
+        data_path=args.test_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        augment=args.augment
+    )
+
+    if args.val_path:
+        val_set = ReactionData(
+            data_path=args.val_path,
+            elem_dict_path=args.elem_path,
+            prec_type=args.prec_type,
+            augment=args.augment
+        )
+    else:
+        print("No validation set gvien, using test set for evaluation purposes")
+        val_set = test_set
 
     # Ensure directory structure present
     os.makedirs("models/", exist_ok=True)
@@ -132,11 +142,19 @@ def main():
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
-    ensemble(args.fold_id, train_set, test_set,
-             args.ensemble, max_prec, embedd_dim)
+    if args.get_reaction_emb:
+        get_reaction_emb(args.fold_id, args.ensemble, train_set, orig_prec_fea_len, "train")
+        get_reaction_emb(args.fold_id, args.ensemble, test_set, orig_prec_fea_len, "test")
+        if args.val_path:
+            get_reaction_emb(args.fold_id, args.ensemble, val_set, orig_prec_fea_len, "val")
+        return
+
+    train_ensemble(args.fold_id, train_set, val_set, args.ensemble, max_prec, embedd_dim)
+
+    test_ensemble(args.fold_id, args.ensemble, test_set, max_prec, embedd_dim)
 
 
-def ensemble(fold_id, dataset, test_set,
+def train_ensemble(fold_id, dataset, test_set,
              ensemble_folds, max_prec, embedd_dim):
     """
     Train multiple models
@@ -194,8 +212,6 @@ def ensemble(fold_id, dataset, test_set,
             experiment(fold_id, run_id, args,
                        train_generator, val_generator,
                        model, optimizer, criterion, scheduler, writer)
-
-    test_ensemble(fold_id, ensemble_folds, test_set, max_prec, embedd_dim)
 
 
 def experiment(fold_id, run_id, args,
@@ -397,7 +413,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
     max_acc = max(subset_acc_dict.values())
     best_subset_acc = [{k: v} for k, v in subset_acc_dict.items() if v == max_acc]
     best_thresh = list(best_subset_acc[0].keys())[0]
-    #print(best_thresh)
+    # print(best_thresh)
     best_logit_thresh = np.log(best_thresh / (1 - best_thresh))
 
     # get uncertainty estimate from ensemble for best_subset_acc threshold
@@ -415,9 +431,55 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, max_prec, embedd_dim):
     print("y_test", np.shape(y_test))
     print("idx", np.shape(idx))
 
-    # save results
+
+def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, pretrained_rnn, set_name):
+    model = init_model(max_prec, embedd_dim)
+
+    criterion, _, _, = init_optim(model)
+
+    params = {"batch_size": args.batch_size,
+              "num_workers": args.workers,
+              "pin_memory": False,
+              "shuffle": False}
+
+    test_generator = DataLoader(hold_out_set, **params)
+
+    y_ensemble = np.zeros((ensemble_folds, len(hold_out_set), args.target_dim))
+    y_ensemble_prec_embed = np.zeros((ensemble_folds, len(hold_out_set), max_prec*embedd_dim))
+
+    for j in range(ensemble_folds):
+
+        if ensemble_folds == 1:
+            j = args.run_id
+            print("Evaluating Model")
+        else:
+            print(f"Evaluating Model {j+1}/{ensemble_folds}")
+
+        # checkpoint = torch.load(f=("models/best_"
+        checkpoint = torch.load(f=("models/checkpoint_"
+                                   f"f-{fold_id}_r-{j}_s-{args.seed}_t-{args.sample}.pth.tar"),
+                                map_location=args.device)
+        model.load_state_dict(checkpoint["state_dict"])
+
+        model.eval()
+        idx, pred, prec_embed, y_test, subset_accuracy, total = model.evaluate(
+            generator=test_generator,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="test"
+        )
+
+        y_ensemble[j, :] = pred
+        y_ensemble_prec_embed[j, :] = prec_embed
+
+    y_pred = np.mean(y_ensemble, axis=0)
+    y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
+    y_test = np.array(y_test)
+
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open(f"results/test_results_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
+    with open(f"data/{set_name}_emb_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 
@@ -429,28 +491,40 @@ def input_parser():
     parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor, baseline model")
 
     # dataset inputs
-    parser.add_argument("--data-path",
+    parser.add_argument("--train-path",
                         type=str,
-                        default="data/datasets/dataset_prec3_df_all_2104.pkl",
+                        default="data/train_10_precs.pkl",
                         metavar="PATH",
-                        help="dataset path")
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--test-path",
+                        type=str,
+                        default="data/test_10_precs.pkl",
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--val-path",
+                        type=str,
+                        default=None,
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
 
     parser.add_argument("--fea-path",
                         type=str,
-                        default="data/embeddings/magpie_embed_prec3_df_all_2104.json",
+                        default="data/magpie_embed_10_precs.json",
                         metavar="PATH",
                         help="Precursor feature path")
 
     parser.add_argument('--elem-path',
                         type=str,
                         nargs='?',
-                        default='data/datasets/elem_dict_prec3_df_all_2104.json',
+                        default='data/elem_dict_10_precs.json',
                         help="Path to element dictionary")
 
     parser.add_argument('--prec-type',
                         type=str,
                         nargs='?',
-                        default='stoich',
+                        default='magpie',
                         help="Type of input, stoich or magpie")
 
     parser.add_argument('--intermediate-dim',
@@ -551,7 +625,7 @@ def input_parser():
                         default=5e-4,
                         type=float,
                         metavar="float",
-                        help="initial learning rate (default: 3e-4)")
+                        help="initial learning rate (default: 5e-4)")
 
     parser.add_argument("--momentum",
                         default=0.9,
@@ -585,19 +659,10 @@ def input_parser():
                         help="number ensemble repeats")
 
     # transfer learning
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
-
     parser.add_argument("--clr",
                         default=True,
                         type=bool,
                         help="use a cyclical learning rate schedule")
-
-    parser.add_argument("--clr-period",
-                        default=100,
-                        type=int,
-                        help="how many learning rate cycles to perform")
 
     parser.add_argument("--resume",
                         action="store_true",
@@ -613,10 +678,11 @@ def input_parser():
                         metavar="PATH",
                         help="checkpoint path for fine tuning")
 
-    args = parser.parse_args(sys.argv[1:])
+    parser.add_argument("--get-reaction-emb",
+                        action="store_true",
+                        help="resume from previous checkpoint")
 
-    if args.lr_search:
-        args.learning_rate = 1e-8
+    args = parser.parse_args(sys.argv[1:])
 
     args.device = torch.device("cuda") if (not args.disable_cuda) and  \
         torch.cuda.is_available() else torch.device("cpu")

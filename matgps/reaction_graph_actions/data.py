@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
-from matgps.utils import LoadFeaturiser,
+from matgps.utils import LoadFeaturiser
 
 
 class ReactionData(Dataset):

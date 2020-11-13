@@ -27,6 +27,89 @@ from matgps.reaction_graph_actions.data import ReactionData, collate_batch
 from matgps.utils import save_checkpoint, load_previous_state
 
 
+def main():
+
+    train_set = ReactionData(
+        data_path=args.train_path,
+        fea_path=args.fea_path,
+        action_dict_path=args.action_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        amounts=args.amounts
+    )
+
+    orig_prec_fea_len = train_set.prec_fea_dim
+    orig_action_fea_len = train_set.action_fea_dim
+    # print('orig precursor fea dim', orig_prec_fea_len)
+    # print('action fea dim', orig_action_fea_len)
+
+    train_idx = list(range(len(train_set)))
+    train_set = torch.utils.data.Subset(train_set, train_idx[0::args.sample])
+
+    test_set = ReactionData(
+        data_path=args.test_path,
+        fea_path=args.fea_path,
+        action_dict_path=args.action_path,
+        elem_dict_path=args.elem_path,
+        prec_type=args.prec_type,
+        amounts=args.amounts
+    )
+
+    if args.val_path:
+        val_set = ReactionData(
+            data_path=args.val_path,
+            fea_path=args.fea_path,
+            action_dict_path=args.action_path,
+            elem_dict_path=args.elem_path,
+            prec_type=args.prec_type,
+            amounts=args.amounts
+        )
+    else:
+        print("No validation set gvien, using test set for evaluation purposes")
+        val_set = test_set
+
+    # load pretrained rnn
+    rnn = LSTM(
+        input_dim=orig_action_fea_len,
+        latent_dim=args.latent_dim,
+        device=args.device,
+        num_layers=1,
+        embedding_dim=8
+    )
+
+    if args.action_rnn:
+        print('loading pretrained RNN...')
+        previous_state = load_previous_state(
+            path=args.action_rnn,
+            model=rnn,
+            device=args.device
+        )
+        pretrained_rnn, _, _, _, _ = previous_state
+
+    if not args.train_rnn:
+        # stops autograd from changing parameters of trained network
+        for p in pretrained_rnn.parameters():
+            p.requires_grad = False
+
+    # Ensure directory structure present
+    os.makedirs("models/", exist_ok=True)
+    os.makedirs("runs/", exist_ok=True)
+    os.makedirs("results/", exist_ok=True)
+
+    print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
+
+    if args.get_reaction_emb:
+        get_reaction_emb(args.fold_id, args.ensemble, train_set, orig_prec_fea_len, pretrained_rnn, "train")
+        get_reaction_emb(args.fold_id, args.ensemble, test_set, orig_prec_fea_len, pretrained_rnn, "test")
+        if args.val_path:
+            get_reaction_emb(args.fold_id, args.ensemble, val_set, orig_prec_fea_len, pretrained_rnn, "val")
+        return
+
+    train_ensemble(args.fold_id, train_set, val_set, args.ensemble, orig_prec_fea_len, pretrained_rnn)
+
+    test_ensemble(args.fold_id, args.ensemble, test_set, orig_prec_fea_len, pretrained_rnn)
+
+
 def get_class_weights(generator):
     """Get class weights for imbalanced dataset by iterating through generator once
     """
@@ -135,68 +218,7 @@ def init_optim(model, weights=None):
     return criterion, optimizer, scheduler
 
 
-def main():
-
-    dataset = ReactionData(
-        data_path=args.data_path,
-        fea_path=args.fea_path,
-        action_dict_path=args.action_path,
-        elem_dict_path=args.elem_path,
-        prec_type=args.prec_type,
-        amounts=args.amounts
-    )
-
-    orig_prec_fea_len = dataset.prec_fea_dim
-    orig_action_fea_len = dataset.action_fea_dim
-    # print('orig precursor fea dim', orig_prec_fea_len)
-    # print('action fea dim', orig_action_fea_len)
-
-    # load pretrained rnn
-    rnn = LSTM(
-        input_dim=orig_action_fea_len,
-        latent_dim=args.latent_dim,
-        device=args.device,
-        num_layers=1,
-        embedding_dim=8
-    )
-
-    if args.action_rnn:
-        print('loading pretrained RNN...')
-        previous_state = load_previous_state(
-            path=args.action_rnn,
-            model=rnn,
-            device=args.device
-        )
-        pretrained_rnn, _, _, _, _ = previous_state
-
-    if not args.train_rnn:
-        # stops autograd from changing parameters of trained network
-        for p in pretrained_rnn.parameters():
-            p.requires_grad = False
-
-    # skip to evaluate whole dataset if testing all
-    if args.test_size == 1.0:
-        test_ensemble(args.fold_id, args.ensemble, dataset, orig_prec_fea_len, pretrained_rnn)
-        return
-
-    indices = list(range(len(dataset)))
-    train_idx, test_idx = split(indices, random_state=args.seed,
-                                test_size=args.test_size)
-
-    train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
-    test_set = torch.utils.data.Subset(dataset, test_idx)
-
-    # Ensure directory structure present
-    os.makedirs("models/", exist_ok=True)
-    os.makedirs("runs/", exist_ok=True)
-    os.makedirs("results/", exist_ok=True)
-
-    print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
-
-    ensemble(args.fold_id, train_set, test_set, args.ensemble, orig_prec_fea_len, pretrained_rnn)
-
-
-def ensemble(fold_id, dataset, test_set, ensemble_folds, fea_len, pretrained_rnn):
+def train_ensemble(fold_id, train_set, val_set, ensemble_folds, fea_len, pretrained_rnn):
     """
     Train multiple models
     """
@@ -207,24 +229,8 @@ def ensemble(fold_id, dataset, test_set, ensemble_folds, fea_len, pretrained_rnn
               "shuffle": True,
               "collate_fn": collate_batch}
 
-    if args.val_size == 0.0:
-        print("No validation set used, using test set for evaluation purposes")
-        # Note that when using this option care must be taken not to
-        # peak at the test-set. The only valid model to use is the one obtained
-        # after the final epoch where the epoch count is decided in advance of
-        # the experiment.
-        train_subset = dataset
-        val_subset = test_set
-    else:
-        indices = list(range(len(dataset)))
-        train_idx, val_idx = split(indices, random_state=args.seed,
-                                   test_size=args.val_size/(1-args.test_size))
-        train_subset = torch.utils.data.Subset(dataset, train_idx)
-        val_subset = torch.utils.data.Subset(dataset, val_idx)
-        print("Shape of train, val subset: ", np.shape(train_subset), np.shape(val_subset))
-
-    train_generator = DataLoader(train_subset, **params)
-    val_generator = DataLoader(val_subset, **params)
+    train_generator = DataLoader(train_set, **params)
+    val_generator = DataLoader(val_set, **params)
     weights = get_class_weights(train_generator)
 
     if not args.evaluate:
@@ -249,8 +255,6 @@ def ensemble(fold_id, dataset, test_set, ensemble_folds, fea_len, pretrained_rnn
             experiment(fold_id, run_id, args,
                        train_generator, val_generator,
                        model, optimizer, criterion, scheduler, writer)
-
-    test_ensemble(fold_id, ensemble_folds, test_set, fea_len, pretrained_rnn)
 
 
 def experiment(fold_id, run_id, args,
@@ -380,6 +384,7 @@ def experiment(fold_id, run_id, args,
 
     writer.close()
 
+
 def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn):
     """
     take an ensemble of models and evaluate their performance on the test set
@@ -411,7 +416,7 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
         else:
             print("Evaluating Model {}/{}".format(j+1, ensemble_folds))
 
-        #checkpoint = torch.load(f=("models/best_"
+        # checkpoint = torch.load(f=("models/best_"
         checkpoint = torch.load(f=("models/checkpoint_"
                                    "f-{}_r-{}_s-{}_t-{}"
                                    ".pth.tar").format(fold_id,
@@ -430,8 +435,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
             threshold=args.threshold,
             task="test"
         )
-        y_ensemble[j,:] = pred
-        y_ensemble_prec_embed[j,:] = prec_embed
+        y_ensemble[j, :] = pred
+        y_ensemble_prec_embed[j, :] = prec_embed
 
     y_pred = np.mean(y_ensemble, axis=0)
     y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
@@ -471,14 +476,60 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn
     print("y_test", np.shape(y_test))
     print("idx", np.shape(idx))
 
-    # save results
+
+def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, pretrained_rnn, set_name):
+
+    model = init_model(pretrained_rnn, fea_len)
+
+    criterion, _, _, = init_optim(model)
+
+    params = {"batch_size": args.batch_size,
+              "num_workers": args.workers,
+              "pin_memory": False,
+              "shuffle": False,
+              "collate_fn": collate_batch}
+
+    test_generator = DataLoader(dataset, **params)
+
+    y_ensemble = np.zeros((ensemble_folds, len(dataset), args.target_dim))
+    y_ensemble_prec_embed = np.zeros((ensemble_folds, len(dataset), args.prec_fea_len))
+
+    for j in range(ensemble_folds):
+
+        if ensemble_folds == 1:
+            j = args.run_id
+            print("Evaluating Model")
+        else:
+            print("Evaluating Model {}/{}".format(j+1, ensemble_folds))
+
+        # checkpoint = torch.load(f=("models/best_"
+        checkpoint = torch.load(f=("models/checkpoint_"
+                                   "f-{}_r-{}_s-{}_t-{}"
+                                   ".pth.tar").format(fold_id,
+                                                      j,
+                                                      args.seed,
+                                                      args.sample),
+                                map_location=args.device)
+        model.load_state_dict(checkpoint["state_dict"])
+
+        model.eval()
+        idx, comp, pred, prec_embed, y_test, subset_accuracy, total = model.evaluate(
+            generator=test_generator,
+            criterion=criterion,
+            optimizer=None,
+            device=args.device,
+            threshold=args.threshold,
+            task="test"
+        )
+        y_ensemble[j, :] = pred
+        y_ensemble_prec_embed[j, :] = prec_embed
+
+    y_pred = np.mean(y_ensemble, axis=0)
+    y_prec_embed = np.mean(y_ensemble_prec_embed, axis=0)
+    y_test = np.array(y_test)
+
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open("results/test_results_"
-                                "f-{}_r-{}_s-{}_t-{}"
-                                ".pkl".format(fold_id,
-                                                   args.run_id,
-                                                   args.seed,
-                                                   args.sample), 'wb') as f:
+    with open(f"data/{set_name}_emb_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 
@@ -491,15 +542,27 @@ def input_parser():
         description="Inorganic Reaction Product Predictor, reaction graph model with actions")
 
     # dataset inputs
-    parser.add_argument("--data-path",
+    parser.add_argument("--train-path",
                         type=str,
-                        default="data/datasets/dataset_10_precs.pkl",
+                        default="data/train_10_precs.pkl",
                         metavar="PATH",
-                        help="dataset path")
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--test-path",
+                        type=str,
+                        default="data/test_10_precs.pkl",
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--val-path",
+                        type=str,
+                        default=None,
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
 
     parser.add_argument("--fea-path",
                         type=str,
-                        default="data/embeddings/magpie_embed_10_precs.json",
+                        default="data/magpie_embed_10_precs.json",
                         metavar="PATH",
                         help="Precursor feature path")
 
@@ -512,13 +575,13 @@ def input_parser():
     parser.add_argument('--action-path',
                         type=str,
                         nargs='?',
-                        default='data/datasets/action_dict_10_precs.json',
+                        default='data/action_dict_10_precs.json',
                         help="Path to action dictionary")
 
     parser.add_argument('--elem-path',
                         type=str,
                         nargs='?',
-                        default='data/datasets/elem_dict_10_precs.json',
+                        default='data/elem_dict_10_precs.json',
                         help="Path to element dictionary")
 
     parser.add_argument('--prec-type',
@@ -588,18 +651,6 @@ def input_parser():
                         type=int,
                         metavar="N",
                         help="mini-batch size (default: 256)")
-
-    parser.add_argument("--val-size",
-                        default=0.0,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data used for validation")
-
-    parser.add_argument("--test-size",
-                        default=0.2,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data for testing")
 
     parser.add_argument("--seed",
                         default=0,
@@ -687,19 +738,10 @@ def input_parser():
                         default=False,
                         help="Train rnn for elem prediction as well")
 
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
-
     parser.add_argument("--clr",
-                        default=True,
+                        default=False,
                         type=bool,
                         help="use a cyclical learning rate schedule")
-
-    parser.add_argument("--clr-period",
-                        default=100,
-                        type=int,
-                        help="how many learning rate cycles to perform")
 
     parser.add_argument("--resume",
                         action="store_true",
@@ -715,15 +757,17 @@ def input_parser():
                         metavar="PATH",
                         help="checkpoint path for fine tuning")
 
-    args = parser.parse_args(sys.argv[1:])
+    parser.add_argument("--get-reaction-emb",
+                        action="store_true",
+                        help="resume from previous checkpoint")
 
-    if args.lr_search:
-        args.learning_rate = 1e-8
+    args = parser.parse_args(sys.argv[1:])
 
     args.device = torch.device("cuda") if (not args.disable_cuda) and  \
         torch.cuda.is_available() else torch.device("cpu")
 
     return args
+
 
 if __name__ == "__main__":
     args = input_parser()

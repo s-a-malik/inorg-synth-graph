@@ -11,6 +11,8 @@ import pandas as pd
 import pickle as pkl
 from itertools import permutations
 
+from sklearn.model_selection import train_test_split as split
+
 from matminer.featurizers.base import MultipleFeaturizer
 from matminer.featurizers import composition as cf
 from matminer.featurizers.conversions import StrToComposition
@@ -29,44 +31,74 @@ def parse_args():
     parser.add_argument('--dataset',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/solid-state_dataset_2019-09-27_upd.json',   # default if no arg provided
+                        default='data/datasets/solid-state_dataset_2019-09-27_upd.json',   # default if no arg provided
                         help="Path to dataset to use")
 
     parser.add_argument('--elem-dict',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/datasets/elem_dict',   # default if no arg provided
+                        default='data/elem_dict',   # default if no arg provided
                         help="Path to element to index dictionary without extension")
 
     parser.add_argument('--action-dict',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/datasets/action_dict',   # default if no arg provided
+                        default='data/action_dict',   # default if no arg provided
                         help="Path to element to index dictionary without extension")
 
     parser.add_argument('--magpie-embed',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/embeddings/magpie_embed',   # default if no arg provided
+                        default='data/magpie_embed',   # default if no arg provided
                         help="Path to magpie embeddings dictionary without extension")
 
     parser.add_argument('--clean-set',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
-                        default='data/datasets/dataset',   # default if no arg provided
+                        default='data/dataset',   # default if no arg provided
                         help="Path to full clean dataset to use without extension")
+
+    parser.add_argument('--train-set',
+                        type=str,
+                        nargs='?',  # number of arguments 0 or 1
+                        default='data/train',   # default if no arg provided
+                        help="Path to train dataset to use without extension")
+
+    parser.add_argument('--test-set',
+                        type=str,
+                        nargs='?',  # number of arguments 0 or 1
+                        default='data/test',   # default if no arg provided
+                        help="Path to test dataset to use without extension")
+
+    parser.add_argument('--val-set',
+                        type=str,
+                        nargs='?',  # number of arguments 0 or 1
+                        default='data/val',   # default if no arg provided
+                        help="Path to val dataset to use without extension")
+
+    parser.add_argument('--test-size',
+                        type=float,
+                        nargs='?',  # number of arguments 0 or 1
+                        default=0.2,   # default if no arg provided
+                        help="size of clean dataset for testing")
+
+    parser.add_argument('--val-size',
+                        type=float,
+                        nargs='?',  # number of arguments 0 or 1
+                        default=0,   # default if no arg provided
+                        help="size of clean dataset for validation")
+
+    parser.add_argument('--seed',
+                        type=int,
+                        nargs='?',  # number of arguments 0 or 1
+                        default=0,   # default if no arg provided
+                        help="Random seed for splitting data")
 
     parser.add_argument('--ps',
                         type=str,
                         nargs='?',  # number of arguments 0 or 1
                         default='',   # default if no arg provided
                         help="postscript on path for save files")
-
-    parser.add_argument('--prec-preprocess',
-                        type=str,
-                        nargs='?',
-                        default='df',
-                        help="type of preprocessing of precursors: df, roost, stoich or magpie")
 
     parser.add_argument('--max-prec',
                         type=int,
@@ -84,22 +116,12 @@ def parse_args():
                         action="store_true",
                         help="augment data with precursor rearrangements")
 
-    parser.add_argument('--amounts',
-                        action="store_true",
-                        help="add precursor amounts to data")
-
     parser.add_argument('--num-elem',
                         type=int,
                         metavar='N',
                         nargs='?',
                         default=-1,
                         help='Take N most common elements only. Default: -1 (all)')
-
-    # parser.add_argument('--exclude-doi',
-    #                     type=str,
-    #                     nargs='?',
-    #                     default='data/BAD_DOI.txt',
-    #                     help='Path to txt file with dodgy dois (in list form) not to be used in dataset')
 
     args = parser.parse_args()
 
@@ -676,7 +698,10 @@ def build_and_save_df():
     """
 
     data = load_dataset()
+
     elem_dict = find_elem_dict(data)
+    save_dict(elem_dict, args.elem_dict)
+
     targets_stoich = preprocess_target_stoich(data, elem_dict)
     prec_stoich, _ = preprocess_precursors_stoich(data, elem_dict)
 
@@ -687,12 +712,16 @@ def build_and_save_df():
         print(elem_dict)
         targets_stoich = preprocess_target_stoich(data, elem_dict)
 
-    processesd = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
-    prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = processesd
+    processed = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
+    prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = processed
+
+    save_dict(magpie_embed, args.magpie_embed)
 
     actions, action_dict = preprocess_actions(data)
+
     dois = [x['doi'] for x in data]
     reactions = [x['reaction_string'] for x in data]
+
     features = {'prec_stoich': prec_stoich,
                 'prec_magpie': prec_magpie,
                 'prec_roost': prec_roost,
@@ -700,68 +729,28 @@ def build_and_save_df():
                 'actions': actions,
                 'target': targets_stoich}
 
+    save_dict(action_dict, args.action_dict)
+
     features = {k: v.tolist() if type(v) == np.ndarray else v for (k, v) in features.items()}
 
     # save data
     df = pd.DataFrame({'dois': dois, 'reaction': reactions, **features})
-    print(df)
+    print(df.columns)
 
     save_dataset(df, args.clean_set)
-    save_dict(elem_dict, args.elem_dict)
-    save_dict(magpie_embed, args.magpie_embed)
-    save_dict(action_dict, args.action_dict)
 
+    df_train, df_test = split(df, random_state=args.seed, test_size=args.test_size)
+    save_dataset(df_test, args.test_set)
 
-def build_and_save_data():
-    """Identify reactions with only up to args.max_prec precursors.
-    Get the precursors out of data (sorted per reaction)
-    Get targets out of data (and mapping)
-    Embed precursors (fasttext)
-    MHE targets by stoichiometry
-    split into training and test
-    """
+    if args.val_size:
+        df_train, df_val = split(df_train, random_state=args.seed, test_size=args.val_size / (1 - args.test_size))
+        save_dataset(df_val, args.val_set)
 
-    data = load_dataset()
-    elem_dict = find_elem_dict(data)
-    print(elem_dict)
+    save_dataset(df_train, args.train_set)
 
-    if args.prec_preprocess == 'stoich':
-        sources, amounts = preprocess_precursors_stoich(data, elem_dict)
-    elif args.prec_preprocess == 'magpie':
-        sources = preprocess_precursors_magpie(data, elem_dict)
-    elif args.prec_preprocess == 'roost':
-        sources, embeddings = preprocess_precursors_roost(data, elem_dict, args.amounts)
-    else:
-        print("Only df, stoich, magpie or roost precursor preprocessing allowed")
-
-    targets = preprocess_target_stoich(data, elem_dict)
-
-    # check shapes
-    print('Shape of sources ', np.shape(sources))
-    print('Shape of targets ', np.shape(targets))
-    print(sources[:3])
-
-    # augment data
-    if args.augment:
-        sources, targets = augment_data(sources, targets)
-
-    # check shapes
-    print('Shape of sources ', np.shape(sources))
-    print('Shape of targets ', np.shape(targets))
-
-    clean_dataset = [sources, targets]
-    save_dataset(clean_dataset, args.clean_set)
-    save_dataset(elem_dict, args.elem_dict)
-
-    if args.prec_preprocess == 'roost':
-        with open(f'{args.magpie_embed}{args.ps}.json', 'w') as json_file:
-            json.dump(embeddings, json_file)
-        print(f'Dumped to {args.magpie_embed}{args.ps}.json')
 
 if __name__ == "__main__":
 
     args = parse_args()
-    if args.prec_preprocess == 'df':
-        build_and_save_df()
-    else:
-        build_and_save_data()
+
+    build_and_save_df()

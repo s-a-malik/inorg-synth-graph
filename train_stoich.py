@@ -23,88 +23,56 @@ from matgps.stoich.data import ProductData, collate_batch
 from matgps.utils import save_checkpoint, load_previous_state
 
 
-def init_model(orig_atom_fea_len, orig_reaction_fea_len):
-
-    model = StoichNet(
-        orig_elem_fea_len=orig_atom_fea_len,
-        orig_reaction_fea_len=orig_reaction_fea_len,
-        intermediate_dim=args.intermediate_dim,
-        n_heads=args.n_heads
-    )
-
-    print(model)
-    model.to(args.device)
-
-    return model
-
-
-def init_optim(model):
-
-    # Select Loss Function
-    if args.loss == "MSE":
-        criterion = nn.MSELoss()
-    elif args.loss == "MAE":
-        criterion = nn.L1Loss()
-    else:
-        raise NameError("Only MSE or MAE are allowed as --loss")
-
-    # Select Optimiser
-    if args.optim == "SGD":
-        optimizer = optim.SGD(model.parameters(),
-                              lr=args.learning_rate,
-                              weight_decay=args.weight_decay,
-                              momentum=args.momentum)
-    elif args.optim == "Adam":
-        optimizer = optim.Adam(model.parameters(),
-                               lr=args.learning_rate,
-                               weight_decay=args.weight_decay)
-    elif args.optim == "AdamW":
-        optimizer = optim.AdamW(model.parameters(),
-                                lr=args.learning_rate,
-                                weight_decay=args.weight_decay)
-    else:
-        raise NameError("Only SGD or Adam is allowed as --optim")
-
-    if args.clr:
-        scheduler = torch.optim.lr_scheduler.CyclicLR(
-            optimizer,
-            base_lr=args.learning_rate/10,
-            max_lr=args.learning_rate,
-            step_size_up=50,
-            cycle_momentum=False)
-    else:
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [])
-
-    return criterion, optimizer, scheduler
-
-
 def main():
 
-    dataset = ProductData(
-        data_path=args.data_path,
+    train_set = ProductData(
+        data_path=args.train_path,
         fea_path=args.elem_fea_path,
         elem_path=args.elem_path,
         threshold=args.threshold,
         use_correct_targets=args.use_correct_targets
     )
 
-    orig_atom_fea_len = dataset.atom_fea_dim    # atom embedding dimension
-    orig_reaction_fea_len = dataset.reaction_fea_dim    # reaction embedding dimension
+    orig_atom_fea_len = train_set.atom_fea_dim    # atom embedding dimension
+    orig_reaction_fea_len = train_set.reaction_fea_dim    # reaction embedding dimension
     print('orig atom embedding dimension', orig_atom_fea_len)
     print('orig reaction embedding dimension', orig_reaction_fea_len)
 
+    train_idx = list(range(len(train_set)))
+    train_set = torch.utils.data.Subset(train_set, train_idx[0::args.sample])
+
+    test_set = ProductData(
+        data_path=args.test_path,
+        fea_path=args.elem_fea_path,
+        elem_path=args.elem_path,
+        threshold=args.threshold,
+        use_correct_targets=args.use_correct_targets
+    )
+
+    if args.val_path:
+        val_set = ProductData(
+            data_path=args.val_path,
+            fea_path=args.elem_fea_path,
+            elem_path=args.elem_path,
+            threshold=args.threshold,
+            use_correct_targets=args.use_correct_targets
+        )
+    else:
+        print("No validation set gvien, using test set for evaluation purposes")
+        val_set = test_set
+
     # skip to evaluate whole dataset if testing all
-    if args.test_size == 1.0:
+    # if args.test_size == 1.0:
+    #     test_ensemble(args.fold_id, args.ensemble, dataset, orig_atom_fea_len, orig_reaction_fea_len)
+    #     return
 
-        test_ensemble(args.fold_id, args.ensemble, dataset, orig_atom_fea_len, orig_reaction_fea_len)
-        return
+    # indices = list(range(len(dataset)))
+    # train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
 
-    indices = list(range(len(dataset)))
-    train_idx, test_idx = split(indices, random_state=args.seed,
-                                test_size=args.test_size)
+    ## test size 0.2 , seed 0
+    # train_idx, test_idx = split(indices, random_state=args.seed, test_size=args.test_size)
 
-    train_set = torch.utils.data.Subset(dataset, train_idx[0::args.sample])
-    test_set = torch.utils.data.Subset(dataset, test_idx)
+    # test_set = torch/.utils.data.Subset(dataset, test_idx)
 
     # Ensure directory structure present
     os.makedirs(f"models/", exist_ok=True)
@@ -113,12 +81,32 @@ def main():
 
     print("Shape of train set, test set: ", np.shape(train_set), np.shape(test_set))
 
-    ensemble(args.fold_id, train_set, test_set,
-             args.ensemble, orig_atom_fea_len, orig_reaction_fea_len)
+    train_ensemble(
+        args.fold_id,
+        train_set,
+        val_set,
+        args.ensemble,
+        orig_atom_fea_len,
+        orig_reaction_fea_len
+    )
+
+    test_ensemble(
+        args.fold_id,
+        args.ensemble,
+        test_set,
+        orig_atom_fea_len,
+        orig_reaction_fea_len
+    )
 
 
-def ensemble(fold_id, dataset, test_set,
-             ensemble_folds, fea_len, reaction_fea_len):
+def train_ensemble(
+    fold_id,
+    train_set,
+    val_set,
+    ensemble_folds,
+    fea_len,
+    reaction_fea_len
+):
     """
     Train multiple models
     """
@@ -129,24 +117,8 @@ def ensemble(fold_id, dataset, test_set,
               "shuffle": True,
               "collate_fn": collate_batch}
 
-    if args.val_size == 0.0:
-        print("No validation set used, using test set for evaluation purposes")
-        # NOTE that when using this option care must be taken not to
-        # peak at the test-set. The only valid model to use is the one obtained
-        # after the final epoch where the epoch count is decided in advance of
-        # the experiment.
-        train_subset = dataset
-        val_subset = test_set
-    else:
-        indices = list(range(len(dataset)))
-        train_idx, val_idx = split(indices, random_state=args.seed,
-                                   test_size=args.val_size/(1-args.test_size))
-        train_subset = torch.utils.data.Subset(dataset, train_idx)
-        val_subset = torch.utils.data.Subset(dataset, val_idx)
-        print("Shape of train, val subset: ", np.shape(train_subset), np.shape(val_subset))
-
-    train_generator = DataLoader(train_subset, **params)
-    val_generator = DataLoader(val_subset, **params)
+    train_generator = DataLoader(train_set, **params)
+    val_generator = DataLoader(val_set, **params)
 
     if not args.evaluate:
         for run_id in range(ensemble_folds):
@@ -170,12 +142,19 @@ def ensemble(fold_id, dataset, test_set,
                        train_generator, val_generator,
                        model, optimizer, criterion, scheduler, writer)
 
-    test_ensemble(fold_id, ensemble_folds, test_set, fea_len, reaction_fea_len)
 
-
-def experiment(fold_id, run_id, args,
-               train_generator, val_generator,
-               model, optimizer, criterion, scheduler, writer):
+def experiment(
+    fold_id,
+    run_id,
+    args,
+    train_generator,
+    val_generator,
+    model,
+    optimizer,
+    criterion,
+    scheduler,
+    writer
+):
     """
     for given training and validation sets run an experiment.
     """
@@ -227,7 +206,6 @@ def experiment(fold_id, run_id, args,
             criterion, optimizer, scheduler = init_optim(model)
             num_param = sum(p.numel() for p in model.parameters() if p.requires_grad)
             print("Total Number of Trainable Parameters: {}".format(num_param))
-
 
         best_loss, _, _ = model.evaluate(
             generator=val_generator,
@@ -373,11 +351,10 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, reaction_fea_l
     rmse_avg = np.sqrt(mse_avg)
     rmse_std = 0.5 * rmse_avg * mse_std / mse_avg
 
-
     print("y_pred", np.shape(y_pred))
     print("y_test", np.shape(y_test))
-    print(y_pred[:5])
-    print(y_test[:5])
+    # print(y_pred[:5])
+    # print(y_test[:5])
     print("Ensemble Performance Metrics:")
     print("R2 Score: {:.4f} ".format(r2_score(y_test, y_pred)))
     print("MAE (over whole vector): {:.4f} +/- {:.4f}".format(mae_avg, mae_std))
@@ -400,10 +377,11 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, reaction_fea_l
     core = {"id": reaction_idx, "composition": comp}
     results = {"pred-{}".format(num): pd.Series(preds) for (num, preds)
                 in y_pred_ensemble.items()}
+
     df = pd.DataFrame({**core, **results})
     df["pred-ens"] = pd.Series(y_pred_reaction)
     df["target"] = pd.Series(y_test_reaction)
-    print(df)
+    # print(df)
 
     if ensemble_folds == 1:
         df.to_csv(
@@ -425,6 +403,62 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, reaction_fea_l
         )
 
 
+def init_model(orig_atom_fea_len, orig_reaction_fea_len):
+
+    model = StoichNet(
+        orig_elem_fea_len=orig_atom_fea_len,
+        orig_reaction_fea_len=orig_reaction_fea_len,
+        intermediate_dim=args.intermediate_dim,
+        n_heads=args.n_heads
+    )
+
+    print(model)
+    model.to(args.device)
+
+    return model
+
+
+def init_optim(model):
+
+    # Select Loss Function
+    if args.loss == "MSE":
+        criterion = nn.MSELoss()
+    elif args.loss == "MAE":
+        criterion = nn.L1Loss()
+    else:
+        raise NameError("Only MSE or MAE are allowed as --loss")
+
+    # Select Optimiser
+    if args.optim == "SGD":
+        optimizer = optim.SGD(model.parameters(),
+                              lr=args.learning_rate,
+                              weight_decay=args.weight_decay,
+                              momentum=args.momentum)
+    elif args.optim == "Adam":
+        optimizer = optim.Adam(model.parameters(),
+                               lr=args.learning_rate,
+                               weight_decay=args.weight_decay)
+    elif args.optim == "AdamW":
+        optimizer = optim.AdamW(model.parameters(),
+                                lr=args.learning_rate,
+                                weight_decay=args.weight_decay)
+    else:
+        raise NameError("Only SGD or Adam is allowed as --optim")
+
+    if args.clr:
+        scheduler = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=args.learning_rate/10,
+            max_lr=args.learning_rate,
+            step_size_up=50,
+            cycle_momentum=False)
+    else:
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [])
+
+    return criterion, optimizer, scheduler
+
+
+
 def input_parser():
     """
     parse input
@@ -433,9 +467,21 @@ def input_parser():
         description="Inorganic Reaction Product Predictor, Stoichiometry prediction"
     )
     # dataset inputs
-    parser.add_argument("--data-path",
+    parser.add_argument("--train-path",
                         type=str,
-                        default="results/test_results_f-0_r-0_s-0_t-1.pkl",
+                        default="data/train_emb_f-1_r-0_s-0_t-1.pkl",
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--test-path",
+                        type=str,
+                        default="data/test_emb_f-1_r-0_s-0_t-1.pkl",
+                        metavar="PATH",
+                        help="Path to results dataframe from element prediction")
+
+    parser.add_argument("--val-path",
+                        type=str,
+                        default=None,
                         metavar="PATH",
                         help="Path to results dataframe from element prediction")
 
@@ -485,23 +531,11 @@ def input_parser():
                         metavar="N",
                         help="mini-batch size (default: 128)")
 
-    parser.add_argument("--val-size",
-                        default=0.0,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data used for validation")
-
-    parser.add_argument("--test-size",
-                        default=0.2,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data for testing")
-
     parser.add_argument("--seed",
                         default=0,
                         type=int,
                         metavar="N",
-                        help="seed for random number generator")
+                        help="seed used to identify dataset split")
 
     parser.add_argument("--sample",
                         default=1,
@@ -576,19 +610,10 @@ def input_parser():
                         help="number ensemble repeats")
 
     # transfer learning
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
-
     parser.add_argument("--clr",
                         default=True,
                         type=bool,
                         help="use a cyclical learning rate schedule")
-
-    parser.add_argument("--clr-period",
-                        default=100,
-                        type=int,
-                        help="how many learning rate cycles to perform")
 
     parser.add_argument("--resume",
                         action="store_true",
@@ -605,9 +630,6 @@ def input_parser():
                         help="checkpoint path for fine tuning")
 
     args = parser.parse_args(sys.argv[1:])
-
-    if args.lr_search:
-        args.learning_rate = 1e-8
 
     args.device = torch.device("cuda") if (not args.disable_cuda) and  \
         torch.cuda.is_available() else torch.device("cpu")
