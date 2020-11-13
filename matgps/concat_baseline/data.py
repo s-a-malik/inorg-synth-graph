@@ -114,8 +114,7 @@ class ReactionData(Dataset):
         all_precs[self.elem_dict['O']] += 1
         prec_elems = torch.where(all_precs != 0, torch.ones_like(all_precs), all_precs)
 
-        return (precs, prec_elems), \
-            target, idx
+        return (precs, prec_elems), target, idx
 
 
 if __name__ == "__main__":

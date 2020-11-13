@@ -116,6 +116,10 @@ def parse_args():
                         action="store_true",
                         help="augment data with precursor rearrangements")
 
+    parser.add_argument('--split-prec-amts',
+                        action="store_true",
+                        help="augment data with precursor rearrangements")
+
     parser.add_argument('--num-elem',
                         type=int,
                         metavar='N',
@@ -359,7 +363,7 @@ def preprocess_precursors_stoich(data, elem_dict):
             for d in left_side:
                 if d['material'] == prec_formula:
                     prec_amount = d['amount']
-            #print(prec_amount)
+            # print(prec_amount)
             amount_vars = data[reaction]['target']['amounts_vars']
             for var, amount in amount_vars.items():
 
@@ -389,6 +393,7 @@ def preprocess_precursors_stoich(data, elem_dict):
 
             # get list of dictionaries for each material in precursor
             elements = [{element_: '('+stoich_+')*{}'.format(composition[x]["amount"]) for element_, stoich_ in composition[x]['elements'].items()} for x in range(len(composition))]
+
             # add dictionaries together into elements_full
             elements_full = {}
             for x in range(len(elements)):
@@ -407,10 +412,10 @@ def preprocess_precursors_stoich(data, elem_dict):
                     else:
                         elements_full[element] = stoich
 
-            #print(elements_full)
+            # print(elements_full)
             # map dict to integers (dictionary comprehension)
             int_encoded = {elem_dict[elem]: val for elem, val in elements_full.items()}
-            #print(int_encoded)
+            # print(int_encoded)
             # map integer encoding to one hot encoding
             ohe_encoded = [0 for _ in range(len(elem_dict))]
             for element, stoich in int_encoded.items():
@@ -452,6 +457,7 @@ def preprocess_precursors_stoich(data, elem_dict):
             precursors_reaction_amounts[precursor] = prec_amount
         precursors[reaction] = precursors_reaction
         precursors_amounts[reaction] = precursors_reaction_amounts
+
     if dodgy_doi: print(set(dodgy_doi))
 
     return precursors, precursors_amounts
@@ -464,6 +470,7 @@ def preprocess_precursors_magpie(data, elem_dict):
     """
     # stoich encoding
     prec_stoich, _ = preprocess_precursors_stoich(data, elem_dict)
+
     # convert stoich encoding to a clean formula
     vec_to_elem_dict = {v: k for k, v in elem_dict.items()}
     reaction_index = []
@@ -485,11 +492,15 @@ def preprocess_precursors_magpie(data, elem_dict):
     data = StrToComposition(target_col_id="composition_obj").featurize_dataframe(df, "composition")
 
     # Use the features from MAGPIE
-    feature_calculators = MultipleFeaturizer([cf.Stoichiometry(), cf.ElementProperty.from_preset("magpie"),
-                                            cf.ValenceOrbital(props=["avg"]), cf.IonProperty(fast=True)])
+    feature_calculators = MultipleFeaturizer([
+        cf.Stoichiometry(),
+        cf.ElementProperty.from_preset("magpie"),
+        cf.ValenceOrbital(props=["avg"]),
+        cf.IonProperty(fast=True)
+    ])
     feature_labels = feature_calculators.feature_labels()
-    data = feature_calculators.featurize_dataframe(data, col_id="composition_obj", ignore_errors=True)
 
+    data = feature_calculators.featurize_dataframe(data, col_id="composition_obj", ignore_errors=True)
     data = data.fillna(value=0)
 
     # group by reaction and make numpy array
@@ -510,6 +521,7 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
     """
     # stoich encoding
     prec_stoich, prec_amounts = preprocess_precursors_stoich(data, elem_dict)
+
     # convert stoich encoding to a clean formula
     vec_to_elem_dict = {v: k for k, v in elem_dict.items()}
     reaction_index = []
@@ -527,12 +539,17 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
     d = {'reaction': reaction_index, 'composition': prec_string}
     df = pd.DataFrame(data=d)
     data = StrToComposition(target_col_id="composition_obj").featurize_dataframe(df, "composition")
-    # Use the features from MAGPIE
-    feature_calculators = MultipleFeaturizer([cf.Stoichiometry(), cf.ElementProperty.from_preset("magpie"),
-                                            cf.ValenceOrbital(props=["avg"]), cf.IonProperty(fast=True)])
-    feature_labels = feature_calculators.feature_labels()
-    data = feature_calculators.featurize_dataframe(data, col_id="composition_obj", ignore_errors=True)
 
+    # Use the features from MAGPIE
+    feature_calculators = MultipleFeaturizer(
+        [cf.Stoichiometry(),
+        cf.ElementProperty.from_preset("magpie"),
+        cf.ValenceOrbital(props=["avg"]),
+        cf.IonProperty(fast=True)]
+    )
+    feature_labels = feature_calculators.feature_labels()
+
+    data = feature_calculators.featurize_dataframe(data, col_id="composition_obj", ignore_errors=True)
     data = data.fillna(value=0)
 
     # Get precursor magpie dictionary. T transposes dataframe
@@ -553,7 +570,7 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
         prec_roost_am = []
         for reaction, precs in formulas.iteritems():
             prec_roost.append([i for i in precs if i])
-            prec_roost_am.append([(precs[i], prec_amounts[reaction][i])  for i in range(len(precs)) if precs[i]])
+            prec_roost_am.append([(precs[i], prec_amounts[reaction][i]) for i in range(len(precs)) if precs[i]])
 
         return prec_stoich, prec_magpie_pre, prec_roost, prec_roost_am, prec_magpie_dict
     else:
@@ -561,7 +578,7 @@ def preprocess_precursors_roost(data, elem_dict, get_amount, get_all):
         prec_formulas = []
         for reaction, precs in formulas.iteritems():
             if get_amount:
-                prec_formulas.append([(precs[i], prec_amounts[reaction][i])  for i in range(len(precs)) if precs[i]])
+                prec_formulas.append([(precs[i], prec_amounts[reaction][i]) for i in range(len(precs)) if precs[i]])
             else:
                 prec_formulas.append([i for i in precs if i])
 
@@ -658,6 +675,16 @@ def save_dataset(data, path):
     print(f'Dumped to {path}{args.ps}.pkl')
 
 
+def save_dataset_splits(data, path):
+    """Writes preprocessed data to pickle files
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    for num in data["n_prec"].unique():
+        with open(f'{path}_np_{num}{args.ps}.pkl', 'wb') as f:
+            pkl.dump(data[data["n_prec"] == num], f)
+
+
 def save_dict(data, path):
     """Writes dict to json files
     """
@@ -697,20 +724,28 @@ def build_and_save_df():
         ==========      ==============================================================
     """
 
+    # NOTE the fact the the numbers for each element change each time the file
+    # is processed should be fixed.
+
     data = load_dataset()
 
     elem_dict = find_elem_dict(data)
     save_dict(elem_dict, args.elem_dict)
 
-    targets_stoich = preprocess_target_stoich(data, elem_dict)
-    prec_stoich, _ = preprocess_precursors_stoich(data, elem_dict)
+    # data = data[:500]
 
-    # reduce dataset
-    if args.num_elem > 0:
-        data = remove_rare_elems(data, prec_stoich, targets_stoich, elem_dict)
-        elem_dict = find_elem_dict(data)
-        print(elem_dict)
-        targets_stoich = preprocess_target_stoich(data, elem_dict)
+    targets_stoich = preprocess_target_stoich(data, elem_dict)
+    # prec_stoich, _ = preprocess_precursors_stoich(data, elem_dict)
+
+    # # reduce dataset
+    # if args.num_elem > 0:
+    #     data = remove_rare_elems(data, prec_stoich, targets_stoich, elem_dict)
+    #     elem_dict = find_elem_dict(data)
+    #     print(elem_dict)
+    #     targets_stoich = preprocess_target_stoich(data, elem_dict)
+
+    # NOTE prec_roost? what is this for surely we can always use prec_roost_am.
+    # NOTE why do we need prec_magpie in the df if we have the magpie_embed reference.
 
     processed = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
     prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = processed
@@ -718,6 +753,7 @@ def build_and_save_df():
     save_dict(magpie_embed, args.magpie_embed)
 
     actions, action_dict = preprocess_actions(data)
+    save_dict(action_dict, args.action_dict)
 
     dois = [x['doi'] for x in data]
     reactions = [x['reaction_string'] for x in data]
@@ -729,13 +765,11 @@ def build_and_save_df():
                 'actions': actions,
                 'target': targets_stoich}
 
-    save_dict(action_dict, args.action_dict)
-
     features = {k: v.tolist() if type(v) == np.ndarray else v for (k, v) in features.items()}
 
     # save data
     df = pd.DataFrame({'dois': dois, 'reaction': reactions, **features})
-    print(df.columns)
+    df["n_prec"] = df["prec_roost"].apply(lambda x: len(x))
 
     save_dataset(df, args.clean_set)
 
@@ -747,6 +781,13 @@ def build_and_save_df():
         save_dataset(df_val, args.val_set)
 
     save_dataset(df_train, args.train_set)
+
+    if args.split_prec_amts:
+        save_dataset_splits(df_train, args.train_set)
+        save_dataset_splits(df_test, args.test_set)
+
+        if args.val_size:
+            save_dataset_splits(df_val, args.val_set)
 
 
 if __name__ == "__main__":
