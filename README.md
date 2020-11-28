@@ -23,22 +23,21 @@ The element embeddings used in this work are found here: [Unsupervised word embe
 
 preprocess.py is used to generate the dataframes and supporting files from the raw data. The number of elements and precursors can be adjusted using optional arguments.
 
-dodgy_dois.txt contains the the dois of reactions incompatible with the model.
-
+Using the default seed (0) gives the dataset splittings used in the paper. 
 
 ## Training and Testing
 
-train.py is used for training the reaction graph model.
+train_action_rnn.py is used for training the action sequence autoencoder.
 
-train_actions.py is used for training the reaction graph model with action sequences.
+train_reaction_graph.py is used for training the reaction graph model without action sequences.
 
-reaction_graph_actions/actions_rnn.py is used for training the action sequence autoencoder.
+train_reaction_graph_with_actions.py is used for training the reaction graph model with action sequences.
 
-train_no_graph.py is used for training the non-graph baseline model.
+train_baseline.py is used for training the baseline magpie model.
 
 train_stoich.py is used for training the stoichiometry prediction model.
 
-Model dimensions and Hyperparameters are set using argparse flags.
+Model dimensions and Hyperparameters can be set using argparse flags.
 
 ## Example Usage
 
@@ -52,13 +51,13 @@ python preprocess.py --dataset data/datasets/solid-state_dataset_2019-06-27.json
 Training Action Autoencoder:
 ```sh
 python train_action_rnn.py --train-path data/train_10_precs.pkl \
-    --train-path data/test_10_precs.pkl \
+    --test-path data/test_10_precs.pkl \
     --action-path data/action_dict_10_precs.json
 ```
 
 Training product element prediction model (with actions):
 ```sh
-python train_reaction_graph_with_actions.py --train-path data/train_3_precs.pkl \
+python train_reaction_graph_with_actions.py --train-path data/train_10_precs.pkl \
     --test-path data/test_10_precs.pkl \
     --fea-path data/magpie_embed_10_precs.json \
     --action-path data/action_dict_10_precs.json \
@@ -68,7 +67,7 @@ python train_reaction_graph_with_actions.py --train-path data/train_3_precs.pkl 
     --ensemble 5
 ```
 
-Get reaction embeddings for full dataset (required for training stoichiometry prediction)
+Get reaction embeddings for full dataset (for training stoichiometry prediction)
 ```sh
 python train_reaction_graph_with_actions.py --train-path data/train_10_precs.pkl \
     --test-path data/test_10_precs.pkl \
@@ -81,17 +80,17 @@ python train_reaction_graph_with_actions.py --train-path data/train_10_precs.pkl
     --get-reaction-emb
 ```
 
-Training stoichiometry prediction model (using correct element predictions):
+Training the stoichiometry prediction model:
 ```sh
-python train_stoich.py --train-path data/train_emb_f-1_r-0_s-0_t-1.pkl \
-    --test-path data/test_emb_f-1_r-0_s-0_t-1.pkl \
+python train_stoich.py --train-path data/train_f-1_emb_reaction_graph_actions.pkl \
+    --test-path data/test_f-1_emb_reaction_graph_actions.pkl \
     --elem-path data/elem_dict_10_precs.json \
     --elem-fea-path data/embeddings/matscholar-embedding.json \
     --use-correct-targets \
     --ensemble 5 --fold-id 1
 ```
 
-For end-to-end testing, run --evaluate on the trained product prediction model, then --evaluate on the trained stoichiometry prediction model (removing --use-correct-targets flag) using the product prediction results as an input file.
+For end-to-end testing, use the  `--evaluate` flag on the trained product prediction model to obtain the element predictions, then the `--evaluate` flag on the trained stoichiometry prediction model (removing the `--use-correct-targets` flag in the example).
 
 ## Acknowledgements
 
