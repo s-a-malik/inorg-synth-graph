@@ -411,7 +411,7 @@ def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, set_name):
     y_test = np.array(y_test)
 
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open(f"data/{set_name}_f{fold_id}_emb_reaction_graph_no_actions.pkl", 'wb') as f:
+    with open(f"data/{set_name}_f-{fold_id}_emb_reaction_graph_no_actions.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 
