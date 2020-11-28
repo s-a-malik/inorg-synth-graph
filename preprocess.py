@@ -30,74 +30,74 @@ def parse_args():
 
     parser.add_argument('--dataset',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/datasets/solid-state_dataset_2019-09-27_upd.json',   # default if no arg provided
+                        nargs='?',
+                        default='data/datasets/solid-state_dataset_2019-09-27_upd.json',
                         help="Path to dataset to use")
 
     parser.add_argument('--elem-dict',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/elem_dict',   # default if no arg provided
+                        nargs='?',
+                        default='data/elem_dict',
                         help="Path to element to index dictionary without extension")
 
     parser.add_argument('--action-dict',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/action_dict',   # default if no arg provided
+                        nargs='?',
+                        default='data/action_dict',
                         help="Path to element to index dictionary without extension")
 
     parser.add_argument('--magpie-embed',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/magpie_embed',   # default if no arg provided
+                        nargs='?',
+                        default='data/magpie_embed',
                         help="Path to magpie embeddings dictionary without extension")
 
     parser.add_argument('--clean-set',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/dataset',   # default if no arg provided
+                        nargs='?',
+                        default='data/dataset',
                         help="Path to full clean dataset to use without extension")
 
     parser.add_argument('--train-set',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/train',   # default if no arg provided
+                        nargs='?',
+                        default='data/train',
                         help="Path to train dataset to use without extension")
 
     parser.add_argument('--test-set',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/test',   # default if no arg provided
+                        nargs='?',
+                        default='data/test',
                         help="Path to test dataset to use without extension")
 
     parser.add_argument('--val-set',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='data/val',   # default if no arg provided
+                        nargs='?',
+                        default='data/val',
                         help="Path to val dataset to use without extension")
 
     parser.add_argument('--test-size',
                         type=float,
-                        nargs='?',  # number of arguments 0 or 1
-                        default=0.2,   # default if no arg provided
+                        nargs='?',
+                        default=0.2,
                         help="size of clean dataset for testing")
 
     parser.add_argument('--val-size',
                         type=float,
-                        nargs='?',  # number of arguments 0 or 1
-                        default=0,   # default if no arg provided
+                        nargs='?',
+                        default=0,
                         help="size of clean dataset for validation")
 
     parser.add_argument('--seed',
                         type=int,
-                        nargs='?',  # number of arguments 0 or 1
-                        default=0,   # default if no arg provided
+                        nargs='?',
+                        default=0,
                         help="Random seed for splitting data")
 
     parser.add_argument('--ps',
                         type=str,
-                        nargs='?',  # number of arguments 0 or 1
-                        default='',   # default if no arg provided
+                        nargs='?',
+                        default='',
                         help="postscript on path for save files")
 
     parser.add_argument('--max-prec',
@@ -134,7 +134,7 @@ def parse_args():
 
 def load_dataset():
     """Load dataset from path listed in arguments.
-    Uses args.exclude_doi file to selectively remove troublesome reactions
+    Uses exclude.py file to selectively remove troublesome reactions
     Returns trimmed dataset with only reactions with
     args.min_prec <= no. of precursors <= args.max_prec
     """
@@ -144,9 +144,6 @@ def load_dataset():
 
     print('Untrimmed dataset size', len(raw_data))
     data = []
-
-    # with open(args.BAD_DOI, 'r') as f:
-    #     BAD_DOI = literal_eval(f.read())
 
     for reaction in range(len(raw_data)):
         # check if number of precursors is within limits and no dodgy precursors
@@ -373,7 +370,7 @@ def preprocess_precursors_stoich(data, elem_dict):
                     var_stoich = (amount['max_value'] + amount['min_value']) / 2
                 else:
                     var_stoich = 0.0
-                    dodgy.doi.append(data[reaction]['doi'])
+                    dodgy_doi.append(data[reaction]['doi'])
 
                 prec_amount = prec_amount.replace(var, str(var_stoich))
             # if x not replaced
@@ -744,8 +741,8 @@ def build_and_save_df():
     #     print(elem_dict)
     #     targets_stoich = preprocess_target_stoich(data, elem_dict)
 
-    # NOTE prec_roost? what is this for surely we can always use prec_roost_am.
-    # NOTE why do we need prec_magpie in the df if we have the magpie_embed reference.
+    # NOTE the prec_roost column is unneccesary and should be changed
+    # NOTE the prec_magpie column is unneccesary with the associated magpie_embed reference and should be changed
 
     processed = preprocess_precursors_roost(data, elem_dict, get_amount=False, get_all=True)
     prec_stoich, prec_magpie, prec_roost, prec_roost_am, magpie_embed = processed
