@@ -13,173 +13,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-def input_parser():
-    """
-    parse input
-    """
-    parser = argparse.ArgumentParser(description="Inorganic Reaction Product Predictor," 
-                                                "Stoichiometry prediction")
-    # dataset inputs
-    parser.add_argument("--data-path",
-                        type=str,
-                        default="results/test_results_f-0_r-0_s-0_t-1.pkl",
-                        metavar="PATH",
-                        help="Path to results dataframe from element prediction")
-    parser.add_argument("--elem-fea-path",
-                        type=str,
-                        default="data/embeddings/matscholar-embedding.json",
-                        metavar="PATH",
-                        help="Path to element features")
-    parser.add_argument('--elem-path',
-	                    type=str,   
-                        nargs='?',  
-                        default='data/datasets/elem_dict_10_precs.json', 
-	                    help="Path to element dictionary")
-    parser.add_argument('--intermediate-dim',
-                        type=int,   
-                        nargs='?', 
-                        default=256,
-                        help='Intermediate model dimension')
-    parser.add_argument("--n-heads",
-                        default=5,
-                        type=int,
-                        metavar="N",
-                        help="number of attention heads")
-    
-    parser.add_argument("--disable-cuda",
-                        action="store_true",
-                        help="Disable CUDA")
-
-    # restart inputs
-    parser.add_argument("--evaluate",
-                        action="store_true",
-                        help="skip network training stages checkpoint")
-
-    # dataloader inputs
-    parser.add_argument("--workers",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="number of data loading workers (default: 0)")
-    parser.add_argument("--batch-size", "--bsize",
-                        default=256,
-                        type=int,
-                        metavar="N",
-                        help="mini-batch size (default: 128)")
-    parser.add_argument("--val-size",
-                        default=0.0,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data used for validation")
-    parser.add_argument("--test-size",
-                        default=0.2,
-                        type=float,
-                        metavar="N",
-                        help="proportion of data for testing")
-    parser.add_argument("--seed",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="seed for random number generator")
-    parser.add_argument("--sample",
-                        default=1,
-                        type=int,
-                        metavar="N",
-                        help="sub-sample the training set for learning curves")
-    parser.add_argument("--use-correct-targets",
-                        action="store_true",
-                        help="Use correct elements for training")   
-
-    # optimiser inputs
-    parser.add_argument("--epochs",
-                        default=200,
-                        type=int,
-                        metavar="N",
-                        help="number of total epochs to run")
-    parser.add_argument("--loss",
-                        default="MSE",
-                        type=str,
-                        metavar="str",
-                        help="choose a Loss Function")
-
-    parser.add_argument("--threshold",
-                        default=0.5,
-                        type=float,
-                        metavar='prob',
-                        help="Threshold for element presence in product (probability)")
-    parser.add_argument("--optim",
-                        default="Adam",
-                        type=str,
-                        metavar="str",
-                        help="choose an optimizer; SGD, Adam or AdamW")
-    parser.add_argument("--learning-rate", "--lr",
-                        default=0.0001,
-                        type=float,
-                        metavar="float",
-                        help="initial learning rate (default: 3e-4)")
-    parser.add_argument("--momentum",
-                        default=0.9,
-                        type=float,
-                        metavar="float [0,1]",
-                        help="momentum (default: 0.9)")
-    parser.add_argument("--weight-decay",
-                        default=1e-6,
-                        type=float,
-                        metavar="float [0,1]",
-                        help="weight decay (default: 0)")
-
-    # ensemble inputs
-    parser.add_argument("--fold-id",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="identify the fold of the data")
-    parser.add_argument("--run-id",
-                        default=0,
-                        type=int,
-                        metavar="N",
-                        help="ensemble model id")
-    parser.add_argument("--ensemble",
-                        default=1,
-                        type=int,
-                        metavar="N",
-                        help="number ensemble repeats")
-
-    # transfer learning
-    parser.add_argument("--lr-search",
-                        action="store_true",
-                        help="perform a learning rate search")
-    parser.add_argument("--clr",
-                        default=True,
-                        type=bool,
-                        help="use a cyclical learning rate schedule")
-    parser.add_argument("--clr-period",
-                        default=100,
-                        type=int,
-                        help="how many learning rate cycles to perform")
-    parser.add_argument("--resume",
-                        action="store_true",
-                        help="resume from previous checkpoint")
-    parser.add_argument("--transfer",
-                        type=str,
-                        metavar="PATH",
-                        help="checkpoint path for transfer learning")
-    parser.add_argument("--fine-tune",
-                        type=str,
-                        metavar="PATH",
-                        help="checkpoint path for fine tuning")
-
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.lr_search:
-        args.learning_rate = 1e-8
-
-    args.device = torch.device("cuda") if (not args.disable_cuda) and  \
-        torch.cuda.is_available() else torch.device("cpu")
-
-    return args
-
-
 class ProductData(Dataset):
     """
     The ProductData dataset is a wrapper for the product element prediction results dataset.
@@ -209,10 +42,10 @@ class ProductData(Dataset):
             correct_logits = []
             for reaction in range(len(logits)):
                 correct_logits.append([2.5 if elem != 0 else -999 for elem in targets[reaction]])
-            df = pd.DataFrame(data={'logits': map(list, correct_logits), 'targets': map(list, targets), 
+            df = pd.DataFrame(data={'logits': map(list, correct_logits), 'targets': map(list, targets),
                                     'prec_embed': map(list, prec_embed), 'id': id})
-        else:                           
-            df = pd.DataFrame(data={'logits': map(list, logits), 'targets': map(list, targets), 
+        else:
+            df = pd.DataFrame(data={'logits': map(list, logits), 'targets': map(list, targets),
                                     'prec_embed': map(list, prec_embed), 'id': id})
 
         print(df)
@@ -312,7 +145,7 @@ def collate_batch(dataset_list):
         Atom features from atom type
     reaction_elem_idx: list of torch.LongTensor (N0,)
         Mapping from the crystal idx to atom idx
-    batch_reaction_embed: torch.Tensor shape (N0, reaction_fea_len)    
+    batch_reaction_embed: torch.Tensor shape (N0, reaction_fea_len)
         Reaction embeddings
     target: torch.Tensor shape (N, target_dim)
         Target stoichs for prediction
@@ -329,7 +162,7 @@ def collate_batch(dataset_list):
     reaction_base_idx = 0
     for i, ((atom_fea, reaction_embed),
             target, elements, reaction_id) in enumerate(dataset_list):
-        
+
         # number of atoms for this reaction
         n_i = atom_fea.shape[0]
 
@@ -351,7 +184,7 @@ def collate_batch(dataset_list):
         reaction_base_idx += n_i
 
     return (torch.cat(batch_atom_fea, dim=0),
-            torch.cat(reaction_elem_idx, dim=0), 
+            torch.cat(reaction_elem_idx, dim=0),
             torch.stack(batch_reaction_embed, dim=0)), \
         torch.cat(batch_target, dim=0), \
         batch_elements, \
@@ -418,17 +251,17 @@ class LoadFeaturiser(Featuriser):
             self._embedding[key] = np.array(value, dtype=float)
 
 if __name__ == "__main__":
-    
+
     data_path = 'data/datasets/test_results_prec3_amounts_roost_with_embed.pkl'
     embedding_path = 'data/embeddings/matscholar-embedding.json'
     elemdict_path = 'data/datasets/elem_dict_prec3_df_all_2104.pkl'
     threshold = 0.9
-    
+
     dataset = ProductData(data_path, embedding_path, elemdict_path, threshold, use_correct_targets=True)
     (atom_fea, prec_embed), \
             target, elements, cry_id = dataset.__getitem__(1)
 
     print(atom_fea, target, elements, prec_embed, cry_id)
 
-        
+
 

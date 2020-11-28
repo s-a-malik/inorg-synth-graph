@@ -1,9 +1,3 @@
-# folders
-/data
-/runs
-/results
-/models
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -112,21 +106,15 @@ venv.bak/
 
 #vscode
 .vscode/
-checkpoint.pth.tar
-model_best.pth.tar
-test_results*
-ensemble_results*
 
-runs/
-results/
-models/
-cds3/
+# folders
+/runs
+/results
+/models
 
-*.pth.tar
-
-sampnn/crossval.py
+*.pkl
+*.json
 
 .ipynb_checkpoints/
 
-*.pdf
 .DS_Store
