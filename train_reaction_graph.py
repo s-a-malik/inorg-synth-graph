@@ -6,6 +6,7 @@ import argparse
 import pickle as pkl
 
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn as nn
@@ -346,10 +347,21 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
     print("y_test", np.shape(y_test))
     print("idx", np.shape(idx))
 
+    df = pd.DataFrame()
+    df["idx"] = [a.item() for a in idx]  # convert tensor to number
+    df["y_test"] = [list(a) for a in y_test]  # make into list of vectors
+    df["y_pred"] = [list(a) for a in y_pred]
+    df.to_csv(
+        index=False,
+        path_or_buf=(
+            f"results/test_results_ele_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.csv"
+        )
+    )
 
-def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, pretrained_rnn, set_name):
 
-    model = init_model(pretrained_rnn, fea_len)
+def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, set_name):
+
+    model = init_model(fea_len)
 
     criterion, _, _, = init_optim(model)
 
