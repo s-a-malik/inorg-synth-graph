@@ -33,11 +33,12 @@ class ReactionData(Dataset):
         print(df)
 
         self.df = df
+        self.n_prec = df["n_prec"].max()
         self.prec_type = prec_type
         self.augment = augment
 
-        precs_stoich = np.array(df['prec_stoich'].tolist())
-        precs_magpie = np.array(df['prec_magpie'].tolist())
+        precs_stoich = np.array(df['prec_stoich'].tolist())[:, :self.n_prec, :]
+        precs_magpie = np.array(df['prec_magpie'].tolist())[:, :self.n_prec, :]
 
         if prec_type == 'stoich':
             self.max_prec = precs_stoich.shape[1]
@@ -99,7 +100,9 @@ class ReactionData(Dataset):
             prec_magpie = torch.Tensor(self.precs_magpie[idx])
             target = torch.Tensor(self.targets[idx])
         else:
-            _, prec_stoich, prec_magpie, _, _, _, target = self.df.iloc[idx]
+            prec_stoich, prec_magpie, target = self.df.iloc[idx][["prec_stoich", "prec_magpie", "target"]]
+            prec_stoich = prec_stoich[:self.n_prec]
+            prec_magpie = prec_magpie[:self.n_prec]
             target = torch.Tensor(target)
 
         # get inputs

@@ -112,6 +112,9 @@ venv.bak/
 /results
 /models
 
+*.pkl
+*.json
+
 .ipynb_checkpoints/
 
 .DS_Store

@@ -26,7 +26,6 @@ def main():
     train_set = ReactionData(
         data_path=args.train_path,
         fea_path=args.fea_path,
-        action_dict_path=args.action_path,
         elem_dict_path=args.elem_path,
         prec_type=args.prec_type,
         amounts=args.amounts
@@ -41,7 +40,6 @@ def main():
     test_set = ReactionData(
         data_path=args.test_path,
         fea_path=args.fea_path,
-        action_dict_path=args.action_path,
         elem_dict_path=args.elem_path,
         prec_type=args.prec_type,
         amounts=args.amounts
@@ -51,7 +49,6 @@ def main():
         val_set = ReactionData(
             data_path=args.val_path,
             fea_path=args.fea_path,
-            action_dict_path=args.action_path,
             elem_dict_path=args.elem_path,
             prec_type=args.prec_type,
             amounts=args.amounts
@@ -74,7 +71,8 @@ def main():
             get_reaction_emb(args.fold_id, args.ensemble, val_set, orig_prec_fea_len, "val")
         return
 
-    train_ensemble(args.fold_id, train_set, val_set, args.ensemble, orig_prec_fea_len)
+    if not args.evaluate:
+        train_ensemble(args.fold_id, train_set, val_set, args.ensemble, orig_prec_fea_len)
 
     test_ensemble(args.fold_id, args.ensemble, test_set, orig_prec_fea_len)
 
@@ -99,17 +97,18 @@ def train_ensemble(
     val_generator = DataLoader(val_set, **params)
     weights = get_class_weights(train_generator)
 
-    if not args.evaluate:
-        for run_id in range(ensemble_folds):
 
-            # this allows us to run ensembles in parallel rather than in series
-            # by specifiying the run-id arg.
-            if ensemble_folds == 1:
-                run_id = args.run_id
+    for run_id in range(ensemble_folds):
 
-            model = init_model(fea_len)
-            criterion, optimizer, scheduler = init_optim(model, weights=weights)
+        # this allows us to run ensembles in parallel rather than in series
+        # by specifiying the run-id arg.
+        if ensemble_folds == 1:
+            run_id = args.run_id
 
+        model = init_model(fea_len)
+        criterion, optimizer, scheduler = init_optim(model, weights=weights)
+
+        if args.log:
             writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
                                             "{date:%d-%m-%Y_%H:%M:%S}").format(
                                                 date=datetime.datetime.now(),
@@ -117,10 +116,12 @@ def train_ensemble(
                                                 r=run_id,
                                                 s=args.seed,
                                                 t=args.sample))
+        else:
+            writer = None
 
-            experiment(fold_id, run_id, args,
-                       train_generator, val_generator,
-                       model, optimizer, criterion, scheduler, writer)
+        experiment(fold_id, run_id, args,
+                    train_generator, val_generator,
+                    model, optimizer, criterion, scheduler, writer)
 
 
 def experiment(fold_id, run_id, args,
@@ -236,8 +237,9 @@ def experiment(fold_id, run_id, args,
                             checkpoint_file,
                             best_file)
 
-            writer.add_scalar("loss/train", t_loss, epoch+1)
-            writer.add_scalar("loss/validation", val_loss, epoch+1)
+            if args.log:
+                writer.add_scalar("loss/train", t_loss, epoch+1)
+                writer.add_scalar("loss/validation", val_loss, epoch+1)
 
             scheduler.step()
 
@@ -247,7 +249,8 @@ def experiment(fold_id, run_id, args,
     except KeyboardInterrupt:
         pass
 
-    writer.close()
+    if args.log:
+        writer.close()
 
 
 def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
@@ -334,9 +337,9 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
 
     print(f"Best Subset 0/1 score: {max_acc} +/- {ensemble_error} at {best_thresh}")
     print("Ensemble accuracies:", ensemble_accs)
-    print("Subset 0/1 scores:", subset_acc_dict)
-    print("Hamming Loss:", hamming_dict)
-    print("F1 Score (weighted):", f1)
+    # print("Subset 0/1 scores:", subset_acc_dict)
+    # print("Hamming Loss:", hamming_dict)
+    # print("F1 Score (weighted):", f1)
 
     print("y_pred", np.shape(y_pred))
     print("y_prec_embed", np.shape(y_prec_embed))
@@ -396,7 +399,7 @@ def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, pretrained_rnn, 
     y_test = np.array(y_test)
 
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open(f"data/{set_name}_emb_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
+    with open(f"data/{set_name}_f{fold_id}_emb_reaction_graph_no_actions.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 
@@ -608,7 +611,7 @@ def input_parser():
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        default=300,
+                        default=60,
                         type=int,
                         metavar="N",
                         help="number of total epochs to run")
@@ -696,6 +699,10 @@ def input_parser():
     parser.add_argument("--resume",
                         action="store_true",
                         help="resume from previous checkpoint")
+
+    parser.add_argument("--log",
+                        action="store_true",
+                        help="write tensorboard logs")
 
     parser.add_argument("--transfer",
                         type=str,

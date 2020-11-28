@@ -130,13 +130,16 @@ def train_ensemble(
 
             model = init_model(fea_len, reaction_fea_len)
             criterion, optimizer, scheduler = init_optim(model)
-            writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
-                                            "{date:%d-%m-%Y_%H:%M:%S}").format(
-                                                date=datetime.datetime.now(),
-                                                f=fold_id,
-                                                r=run_id,
-                                                s=args.seed,
-                                                t=args.sample))
+            if args.log:
+                writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
+                                                "{date:%d-%m-%Y_%H:%M:%S}").format(
+                                                    date=datetime.datetime.now(),
+                                                    f=fold_id,
+                                                    r=run_id,
+                                                    s=args.seed,
+                                                    t=args.sample))
+            else:
+                writer = None
 
             experiment(fold_id, run_id, args,
                        train_generator, val_generator,
@@ -267,12 +270,13 @@ def experiment(
                             checkpoint_file,
                             best_file)
 
-            writer.add_scalar("loss/train", t_loss, epoch+1)
-            writer.add_scalar("loss/validation", val_loss, epoch+1)
-            writer.add_scalar("rmse/train", t_rmse, epoch+1)
-            writer.add_scalar("rmse/validation", val_rmse, epoch+1)
-            writer.add_scalar("mae/train", t_mae, epoch+1)
-            writer.add_scalar("mae/validation", val_mae, epoch+1)
+            if args.log:
+                writer.add_scalar("loss/train", t_loss, epoch+1)
+                writer.add_scalar("loss/validation", val_loss, epoch+1)
+                writer.add_scalar("rmse/train", t_rmse, epoch+1)
+                writer.add_scalar("rmse/validation", val_rmse, epoch+1)
+                writer.add_scalar("mae/train", t_mae, epoch+1)
+                writer.add_scalar("mae/validation", val_mae, epoch+1)
 
             scheduler.step()
 
@@ -282,7 +286,8 @@ def experiment(
     except KeyboardInterrupt:
         pass
 
-    writer.close()
+    if args.log:
+        writer.close()
 
 
 def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, reaction_fea_len):
@@ -614,6 +619,10 @@ def input_parser():
                         default=True,
                         type=bool,
                         help="use a cyclical learning rate schedule")
+
+    parser.add_argument("--log",
+                        action="store_true",
+                        help="write tensorboard logs")
 
     parser.add_argument("--resume",
                         action="store_true",

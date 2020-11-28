@@ -244,13 +244,16 @@ def train_ensemble(fold_id, train_set, val_set, ensemble_folds, fea_len, pretrai
             model = init_model(pretrained_rnn, fea_len)
             criterion, optimizer, scheduler = init_optim(model, weights=weights)
 
-            writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
-                                            "{date:%d-%m-%Y_%H:%M:%S}").format(
-                                                date=datetime.datetime.now(),
-                                                f=fold_id,
-                                                r=run_id,
-                                                s=args.seed,
-                                                t=args.sample))
+            if args.log:
+                writer = SummaryWriter(log_dir=("runs/f-{f}_r-{r}_s-{s}_t-{t}_"
+                                                "{date:%d-%m-%Y_%H:%M:%S}").format(
+                                                    date=datetime.datetime.now(),
+                                                    f=fold_id,
+                                                    r=run_id,
+                                                    s=args.seed,
+                                                    t=args.sample))
+            else:
+                writer = None
 
             experiment(fold_id, run_id, args,
                        train_generator, val_generator,
@@ -370,9 +373,9 @@ def experiment(fold_id, run_id, args,
                             is_best,
                             checkpoint_file,
                             best_file)
-
-            writer.add_scalar("loss/train", t_loss, epoch+1)
-            writer.add_scalar("loss/validation", val_loss, epoch+1)
+            if args.log:
+                writer.add_scalar("loss/train", t_loss, epoch+1)
+                writer.add_scalar("loss/validation", val_loss, epoch+1)
 
             scheduler.step()
 
@@ -382,7 +385,8 @@ def experiment(fold_id, run_id, args,
     except KeyboardInterrupt:
         pass
 
-    writer.close()
+    if args.log:
+        writer.close()
 
 
 def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len, pretrained_rnn):
@@ -529,7 +533,7 @@ def get_reaction_emb(fold_id, ensemble_folds, dataset, fea_len, pretrained_rnn, 
     y_test = np.array(y_test)
 
     results = [y_pred, y_test, y_prec_embed, idx]
-    with open(f"data/{set_name}_emb_f-{fold_id}_r-{args.run_id}_s-{args.seed}_t-{args.sample}.pkl", 'wb') as f:
+    with open(f"data/{set_name}_f{fold_id}_emb_reaction_graph_actions.pkl", 'wb') as f:
         pkl.dump(results, f)
     print(f'Dumped logits, targets, prec_embeddings, and ids to results file')
 
@@ -746,6 +750,10 @@ def input_parser():
     parser.add_argument("--resume",
                         action="store_true",
                         help="resume from previous checkpoint")
+
+    parser.add_argument("--log",
+                        action="store_true",
+                        help="write tensorboard logs")
 
     parser.add_argument("--transfer",
                         type=str,
