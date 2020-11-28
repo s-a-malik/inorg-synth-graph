@@ -21,21 +21,21 @@ The element embeddings used in this work are found here: [Unsupervised word embe
 
 ## Preprocess
 
-preprocess.py is used to generate the dataframes and supporting files from the raw data. The number of elements and precursors can be adjusted using optional arguments.
+`preprocess.py` is used to generate the dataframes and supporting files from the raw data. The number of elements and precursors can be adjusted using optional arguments.
 
 Using the default seed (0) gives the dataset splittings used in the paper. 
 
 ## Training and Testing
 
-train_action_rnn.py is used for training the action sequence autoencoder.
+`train_action_rnn.py` is used for training the action sequence autoencoder.
 
-train_reaction_graph.py is used for training the reaction graph model without action sequences.
+`train_reaction_graph.py` is used for training the reaction graph model without action sequences.
 
-train_reaction_graph_with_actions.py is used for training the reaction graph model with action sequences.
+`train_reaction_graph_with_actions.py` is used for training the reaction graph model with action sequences.
 
-train_baseline.py is used for training the baseline magpie model.
+`train_baseline.py` is used for training the baseline magpie model.
 
-train_stoich.py is used for training the stoichiometry prediction model.
+`train_stoich.py` is used for training the stoichiometry prediction model.
 
 Model dimensions and Hyperparameters can be set using argparse flags.
 
