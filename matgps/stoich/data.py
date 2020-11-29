@@ -251,17 +251,4 @@ class LoadFeaturiser(Featuriser):
             self._embedding[key] = np.array(value, dtype=float)
 
 if __name__ == "__main__":
-
-    data_path = 'data/datasets/test_results_prec3_amounts_roost_with_embed.pkl'
-    embedding_path = 'data/embeddings/matscholar-embedding.json'
-    elemdict_path = 'data/datasets/elem_dict_prec3_df_all_2104.pkl'
-    threshold = 0.9
-
-    dataset = ProductData(data_path, embedding_path, elemdict_path, threshold, use_correct_targets=True)
-    (atom_fea, prec_embed), \
-            target, elements, cry_id = dataset.__getitem__(1)
-
-    print(atom_fea, target, elements, prec_embed, cry_id)
-
-
-
+    pass

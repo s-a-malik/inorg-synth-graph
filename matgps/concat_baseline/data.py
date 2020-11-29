@@ -121,15 +121,4 @@ class ReactionData(Dataset):
 
 
 if __name__ == "__main__":
-
-    #data_path = 'data/datasets/dataset_prec3_amounts_roost.pkl'
-    data_path = 'data/datasets/datasetdf_test.pkl'
-    embedding_path = 'data/embeddings/magpie_embeddf_test.json'
-    elem_dict_path = 'data/datasets/elem_dictdf_test.json'
-    dataset = ReactionData(data_path, elem_dict_path, 'magpie', True)
-
-    for i in range(6):
-        (precs, prec_elems), \
-                target, cry_id = dataset.__getitem__(i)
-        print(precs.shape, prec_elems.shape, target.shape, cry_id)
-    print(len(dataset))
+    pass

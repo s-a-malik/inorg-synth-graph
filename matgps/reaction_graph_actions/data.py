@@ -285,17 +285,4 @@ def collate_batch(dataset_list):
 
 
 if __name__ == "__main__":
-
-    data_path = 'data/datasets/dataset_prec10_df_all_2104_prec3_dict.pkl'
-    embedding_path = 'data/embeddings/magpie_embed_prec10_df_all_2104.json'
-    elem_path = 'data/datasets/elem_dict_prec3_df_all_2104.json'
-    action_path ='data/datasets/action_dict_prec3_df_all_2104.json'
-    dataset = ReactionData(data_path, embedding_path, action_path, elem_path, prec_type='magpie', amounts=True)
-    print(dataset.elem_dict)
-    (material_weights, material_fea, self_fea_idx, nbr_fea_idx, actions, prec_elems), \
-            target, materials, cry_id = dataset.__getitem__(16064)
-
-    print(material_weights, material_fea, self_fea_idx, nbr_fea_idx, actions, prec_elems, target, materials, cry_id)
-    print(dataset.df.iloc[16064])
-    print(len(dataset))
-    # print(dataset.df.loc[dataset.df['dois'] == '10.1016/j.mseb.2003.09.034'])
+    pass
