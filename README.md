@@ -96,3 +96,7 @@ For end-to-end testing, use the  `--evaluate` flag on the trained product predic
 
 The following work was used as a starting point for developing this work:
 - Goodall, R.E., & Lee, A.A. (2019). https://arxiv.org/abs/1910.00617.
+
+## Disclaimer
+
+This is research code shared without support or guarantee of quality. Please let me know however if there is anything wrong or that could be improved and I will try to solve it.
