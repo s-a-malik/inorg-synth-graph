@@ -694,7 +694,7 @@ def input_parser():
                         help="choose a Loss Function")
 
     parser.add_argument("--threshold",
-                        default=0.9,
+                        default=0.5,
                         type=float,
                         metavar='prob',
                         help="Threshold for element presence in product (probability)")

@@ -639,7 +639,7 @@ def input_parser():
 
     # ensemble inputs
     parser.add_argument("--fold-id",
-                        default=0,
+                        default=1,
                         type=int,
                         metavar="N",
                         help="identify the fold of the data")

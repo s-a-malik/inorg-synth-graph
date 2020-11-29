@@ -352,7 +352,7 @@ def input_parser():
 
     # optimiser inputs
     parser.add_argument("--epochs",
-                        default=10,
+                        default=70,
                         # default=100,
                         type=int,
                         metavar="N",

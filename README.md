@@ -87,7 +87,7 @@ python train_stoich.py --train-path data/train_f-1_emb_reaction_graph_actions.pk
     --elem-path data/elem_dict_10_precs.json \
     --elem-fea-path data/embeddings/matscholar-embedding.json \
     --use-correct-targets \
-    --ensemble 5 --fold-id 1
+    --ensemble 5
 ```
 
 For end-to-end testing, use the  `--evaluate` flag on the trained product prediction model to obtain the element predictions, then the `--evaluate` flag on the trained stoichiometry prediction model (removing the `--use-correct-targets` flag in the example).
