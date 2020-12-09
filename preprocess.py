@@ -118,7 +118,7 @@ def parse_args():
 
     parser.add_argument('--split-prec-amts',
                         action="store_true",
-                        help="augment data with precursor rearrangements")
+                        help="split out data for the baseline model")
 
     parser.add_argument('--num-elem',
                         type=int,

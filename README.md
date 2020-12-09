@@ -2,7 +2,7 @@
 
 Inorganic Reaction Representation Learning and Product Prediction.
 
-Implementation of [Materials Graph Transformer predicts the outcomes of inorganic reactions with reliable uncertainties](https://arxiv.org/abs/2007.15752).
+Implementation of Predicting the outcomes of materials syntheses with deep learning [[ArXiv]](https://arxiv.org/abs/2007.15752).
 
 ## Dependancies
 
@@ -23,7 +23,7 @@ The element embeddings used in this work are found here: [Unsupervised word embe
 
 `preprocess.py` is used to generate the dataframes and supporting files from the raw data. The number of elements and precursors can be adjusted using optional arguments.
 
-Using the default seed (0) gives the dataset splittings used in the paper. 
+Using the default seed (0) gives the dataset splittings used in the paper.
 
 ## Training and Testing
 
@@ -54,6 +54,9 @@ python train_action_rnn.py --train-path data/train_10_precs.pkl \
     --test-path data/test_10_precs.pkl \
     --action-path data/action_dict_10_precs.json
 ```
+
+Note the `--split-prec-amts` flag should be used to split out the data such that it can be
+used with the baseline model.
 
 Training product element prediction model (with actions):
 ```sh
@@ -91,11 +94,6 @@ python train_stoich.py --train-path data/train_f-1_emb_reaction_graph_actions.pk
 ```
 
 For end-to-end testing, use the  `--evaluate` flag on the trained product prediction model to obtain the element predictions, then the `--evaluate` flag on the trained stoichiometry prediction model (removing the `--use-correct-targets` flag in the example).
-
-## Acknowledgements
-
-The following work was used as a starting point for developing this work:
-- Goodall, R.E., & Lee, A.A. (2019). https://arxiv.org/abs/1910.00617.
 
 ## Disclaimer
 

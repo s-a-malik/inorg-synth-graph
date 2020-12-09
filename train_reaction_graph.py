@@ -348,7 +348,8 @@ def test_ensemble(fold_id, ensemble_folds, hold_out_set, fea_len):
     print("idx", np.shape(idx))
 
     df = pd.DataFrame()
-    df["idx"] = [a.item() for a in idx]  # convert tensor to number
+
+    df["idx"] = idx  # convert tensor to number
     df["y_test"] = [list(a) for a in y_test]  # make into list of vectors
     df["y_pred"] = [list(a) for a in y_pred]
     df.to_csv(
