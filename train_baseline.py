@@ -540,7 +540,7 @@ def input_parser():
     parser.add_argument('--intermediate-dim',
                         type=int,
                         nargs='?',
-                        default=128,
+                        default=256,
                         help='Intermediate model dimension')
 
     parser.add_argument('--target-dim',

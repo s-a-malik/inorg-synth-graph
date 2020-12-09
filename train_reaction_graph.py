@@ -568,7 +568,7 @@ def input_parser():
     parser.add_argument('--intermediate-dim',
                         type=int,
                         nargs='?',
-                        default=128,
+                        default=256,
                         help='Intermediate model dimension')
 
     parser.add_argument('--target-dim',
@@ -599,7 +599,7 @@ def input_parser():
                         help="number of data loading workers (default: 0)")
 
     parser.add_argument("--batch-size", "--bsize",
-                        default=128,
+                        default=256,
                         type=int,
                         metavar="N",
                         help="mini-batch size (default: 128)")
@@ -635,7 +635,7 @@ def input_parser():
                         help="choose a Loss Function")
 
     parser.add_argument("--threshold",
-                        default=0.9,
+                        default=0.5,
                         type=float,
                         metavar='prob',
                         help="Threshold for element presence in product (probability)")
@@ -653,7 +653,7 @@ def input_parser():
                         help="choose an optimizer; SGD, Adam or AdamW")
 
     parser.add_argument("--learning-rate", "--lr",
-                        default=5e-4,
+                        default=0.0001,
                         type=float,
                         metavar="float",
                         help="initial learning rate (default: 3e-4)")
@@ -672,13 +672,13 @@ def input_parser():
 
     # graph inputs
     parser.add_argument("--prec-fea-len",
-                        default=64,
+                        default=128,
                         type=int,
                         metavar="N",
                         help="Dimension of node features")
 
     parser.add_argument("--n-graph",
-                        default=3,
+                        default=5,
                         type=int,
                         metavar="N",
                         help="number of graph layers")
