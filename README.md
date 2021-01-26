@@ -2,7 +2,7 @@
 
 Inorganic Reaction Representation Learning and Product Prediction.
 
-Implementation of Predicting the outcomes of materials syntheses with deep learning [[ArXiv]](https://arxiv.org/abs/2007.15752).
+Implementation of [Predicting the outcomes of materials syntheses with deep learning](https://pubs.acs.org/doi/10.1021/acs.chemmater.0c03885) [[ArXiv]](https://arxiv.org/abs/2007.15752).
 
 ## Dependancies
 
@@ -94,6 +94,24 @@ python train_stoich.py --train-path data/train_f-1_emb_reaction_graph_actions.pk
 ```
 
 For end-to-end testing, use the  `--evaluate` flag on the trained product prediction model to obtain the element predictions, then the `--evaluate` flag on the trained stoichiometry prediction model (removing the `--use-correct-targets` flag in the example).
+
+## Cite
+
+Please cite if you have found our work helpful:
+```
+@article{doi:10.1021/acs.chemmater.0c03885,
+author = {Malik, Shreshth A. and Goodall, Rhys E. A. and Lee, Alpha A.},
+title = {Predicting the Outcomes of Material Syntheses with Deep Learning},
+journal = {Chemistry of Materials},
+volume = {33},
+number = {2},
+pages = {616-624},
+year = {2021},
+doi = {10.1021/acs.chemmater.0c03885},
+URL = {https://doi.org/10.1021/acs.chemmater.0c03885},
+eprint = {https://doi.org/10.1021/acs.chemmater.0c03885}
+}
+```
 
 ## Disclaimer
 
